@@ -27,11 +27,15 @@ def main():
         "--generate", action="store_true",
         help="Generate placeholder sprites and exit",
     )
+    parser.add_argument(
+        "--regenerate", action="store_true",
+        help="Force regenerate all sprites (overwrites existing) and exit",
+    )
     args = parser.parse_args()
 
-    if args.generate:
+    if args.generate or args.regenerate:
         from sprite_gen import ensure_sprites_exist
-        ensure_sprites_exist()
+        ensure_sprites_exist(force=args.regenerate)
         print("Placeholder sprites generated in assets/sprites/")
         return
 
