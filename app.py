@@ -12,7 +12,7 @@ from config import TRANSPARENT_COLOR, UPDATE_MS, SPRITE_SCALE
 from sprite_gen import ensure_sprites_exist
 from character import Character
 from behaviors import WindowCloseBehavior, CursorStealBehavior
-from win_api import make_window_clickthrough, IS_WINDOWS
+from win_api import make_window_clickthrough, enable_dpi_awareness, IS_WINDOWS
 
 log = logging.getLogger(__name__)
 
@@ -23,6 +23,9 @@ class DoodleBobApp:
     def __init__(self, windowed: bool = False):
         self.windowed = windowed
         self.paused = False
+
+        # DPI awareness BEFORE any window creation (fixes dual-monitor / scaling)
+        enable_dpi_awareness()
 
         # Generate placeholder sprites if needed
         ensure_sprites_exist()
@@ -98,11 +101,16 @@ class DoodleBobApp:
         if IS_WINDOWS:
             try:
                 import ctypes
-                hwnd = ctypes.windll.user32.GetParent(self.root.winfo_id())
+                # Get the real top-level HWND (not the tkinter child frame)
+                GW_OWNER = 4
+                child_hwnd = self.root.winfo_id()
+                hwnd = ctypes.windll.user32.GetAncestor(child_hwnd, 2)  # GA_ROOT
                 if hwnd == 0:
-                    hwnd = self.root.winfo_id()
+                    hwnd = ctypes.windll.user32.GetParent(child_hwnd)
+                if hwnd == 0:
+                    hwnd = child_hwnd
                 make_window_clickthrough(hwnd)
-                log.info("Overlay set to click-through")
+                log.info("Overlay set to click-through (hwnd=%s)", hwnd)
             except Exception as e:
                 log.warning("Failed to set click-through: %s", e)
 

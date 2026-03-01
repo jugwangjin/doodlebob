@@ -80,16 +80,21 @@ class Character:
 
     def _load_sprites(self):
         """Load all sprite sets."""
+        import logging
+        log = logging.getLogger(__name__)
         for name in ("idle", "walk", "chase", "erase", "draw", "approach"):
             pil_frames = load_sprite_set(name, scale=SPRITE_SCALE)
             if not pil_frames:
+                log.warning("No sprites for '%s', falling back to idle", name)
                 pil_frames = load_sprite_set("idle", scale=SPRITE_SCALE)
             self._sprite_pil[name] = pil_frames
             self._sprites[name] = [ImageTk.PhotoImage(f) for f in pil_frames]
-            # Also create mirrored versions
             mirrored = [f.transpose(Image.FLIP_LEFT_RIGHT) for f in pil_frames]
             self._sprite_pil[f"{name}_l"] = mirrored
             self._sprites[f"{name}_l"] = [ImageTk.PhotoImage(f) for f in mirrored]
+            log.info("Loaded '%s': %d frames, %dx%d px",
+                     name, len(pil_frames),
+                     pil_frames[0].width, pil_frames[0].height)
 
     def _current_sprite_key(self) -> str:
         base = self.state.value

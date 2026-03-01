@@ -16,20 +16,43 @@ if IS_WINDOWS:
 
 
 # ---------------------------------------------------------------------------
+# DPI awareness (must be called before any window creation)
+# ---------------------------------------------------------------------------
+
+def enable_dpi_awareness() -> None:
+    """Enable per-monitor DPI awareness so the overlay matches actual screen pixels."""
+    if not IS_WINDOWS:
+        return
+    try:
+        ctypes.windll.shcore.SetProcessDpiAwareness(2)  # PROCESS_PER_MONITOR_DPI_AWARE
+        log.info("DPI awareness: per-monitor")
+    except Exception:
+        try:
+            ctypes.windll.user32.SetProcessDPIAware()
+            log.info("DPI awareness: system-level")
+        except Exception:
+            log.warning("Could not set DPI awareness")
+
+
+# ---------------------------------------------------------------------------
 # Click-through overlay
 # ---------------------------------------------------------------------------
 
 def make_window_clickthrough(hwnd_int: int) -> None:
-    """Make a window click-through using extended window styles (Windows only)."""
+    """Make a window click-through by adding only WS_EX_TRANSPARENT.
+
+    Note: tkinter's -transparentcolor already sets WS_EX_LAYERED internally.
+    We must NOT re-set WS_EX_LAYERED here or it resets the color-key,
+    making the entire window invisible.
+    """
     if not IS_WINDOWS:
         log.debug("make_window_clickthrough: no-op on non-Windows")
         return
     GWL_EXSTYLE = -20
     WS_EX_TRANSPARENT = 0x00000020
-    WS_EX_LAYERED = 0x00080000
     style = ctypes.windll.user32.GetWindowLongW(hwnd_int, GWL_EXSTYLE)
     ctypes.windll.user32.SetWindowLongW(
-        hwnd_int, GWL_EXSTYLE, style | WS_EX_TRANSPARENT | WS_EX_LAYERED
+        hwnd_int, GWL_EXSTYLE, style | WS_EX_TRANSPARENT
     )
 
 
