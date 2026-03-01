@@ -31,10 +31,12 @@ class State(enum.Enum):
 class Character:
     """DoodleBob character with state machine, animation, and movement."""
 
-    def __init__(self, canvas: tk.Canvas, screen_w: int, screen_h: int):
+    def __init__(self, canvas: tk.Canvas, screen_w: int, screen_h: int,
+                 floating: bool = False):
         self.canvas = canvas
         self.screen_w = screen_w
         self.screen_h = screen_h
+        self.floating = floating
 
         # Display dimensions
         self.display_w = CHAR_BASE_W * SPRITE_SCALE
@@ -275,12 +277,20 @@ class Character:
         idx = self._frame_index % len(frames)
         sprite = frames[idx]
 
+        if self.floating:
+            # In floating mode the window moves, sprite stays at canvas center
+            rx = self.display_w // 2
+            ry = self.display_h // 2
+        else:
+            rx = int(self.x)
+            ry = int(self.y)
+
         if self._canvas_id is None:
             self._canvas_id = self.canvas.create_image(
-                int(self.x), int(self.y), image=sprite, anchor=tk.CENTER
+                rx, ry, image=sprite, anchor=tk.CENTER
             )
         else:
-            self.canvas.coords(self._canvas_id, int(self.x), int(self.y))
+            self.canvas.coords(self._canvas_id, rx, ry)
             self.canvas.itemconfig(self._canvas_id, image=sprite)
 
     def update_cursor_target(self, cx: int, cy: int):
