@@ -50,8 +50,8 @@ class Character:
         self.facing_right = True
 
         # State
-        self.state = State.IDLE
-        self._prev_state = State.IDLE
+        self.state = State.WANDERING
+        self._prev_state = State.WANDERING
 
         # Targets
         self.target_x: int | None = None

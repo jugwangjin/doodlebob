@@ -15,6 +15,7 @@ from character import Character, State
 from win_api import (
     pick_random_window, close_window,
     hide_cursor, show_cursor, set_cursor_pos, get_cursor_pos,
+    IS_WINDOWS,
 )
 
 log = logging.getLogger(__name__)
@@ -26,6 +27,7 @@ class WindowCloseBehavior:
     def __init__(self, character: Character):
         self.character = character
         self.active = False
+        self.enabled = IS_WINDOWS  # Only works on Windows (requires win32gui)
         self._schedule_next()
 
     def _schedule_next(self):
@@ -35,6 +37,9 @@ class WindowCloseBehavior:
         log.info("WindowClose: next trigger in %.1fs", delay)
 
     def update(self):
+        if not self.enabled:
+            return
+
         if self.active:
             return
 
@@ -72,6 +77,7 @@ class CursorStealBehavior:
         self.screen_h = screen_h
         self.active = False
         self._cursor_hidden = False
+        self.enabled = IS_WINDOWS  # Only works on Windows (requires cursor hiding)
         self._schedule_next()
 
     def _schedule_next(self):
@@ -81,6 +87,9 @@ class CursorStealBehavior:
         log.info("CursorSteal: next trigger in %.1fs", delay)
 
     def update(self):
+        if not self.enabled:
+            return
+
         if self.active:
             # Keep updating cursor target while chasing
             if self.character.state == State.CHASING_CURSOR:
