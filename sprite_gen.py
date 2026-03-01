@@ -4,7 +4,8 @@ These are meant to be replaced with proper pixel-art sprites created in
 Aseprite or similar tools.  The generated sprites are intentionally rough
 and "sketchy" to match DoodleBob's hand-drawn aesthetic.
 
-The magic pencil is DoodleBob's defining item and appears in every sprite.
+The magic pencil is DoodleBob's defining item — it's MASSIVE, bigger than
+DoodleBob himself, held above his head with both hands.
 """
 
 import os
@@ -14,33 +15,38 @@ from PIL import Image, ImageDraw
 
 from config import SPRITES_DIR, CHAR_BASE_W, CHAR_BASE_H
 
-# Deterministic seed so regeneration produces identical sprites
 _rng.seed(42)
 
 # Palette
 BLACK = (0, 0, 0, 255)
 WHITE = (245, 240, 230, 255)
-CREAM = (250, 245, 235, 255)
 PUPIL = (10, 10, 10, 255)
 MOUTH = (30, 30, 30, 255)
-PENCIL_YELLOW = (240, 200, 50, 255)
-PENCIL_TIP = (60, 60, 60, 255)
-PENCIL_METAL = (180, 180, 180, 255)
-PENCIL_ERASER = (230, 130, 130, 255)
+PENCIL_YELLOW = (230, 190, 50, 255)
+PENCIL_YELLOW_SHADE = (210, 170, 40, 255)
+PENCIL_TIP = (55, 55, 55, 255)
+PENCIL_METAL = (175, 175, 180, 255)
+PENCIL_METAL_DARK = (140, 140, 148, 255)
+PENCIL_ERASER = (220, 110, 110, 255)
 TRANSPARENT = (0, 0, 0, 0)
 
 # The character body is drawn on a 64x80 canvas, then composited onto the
-# wider CHAR_BASE_W canvas with an X offset so the body is centered and the
-# pencil has room to extend to the right (and to the left when mirrored).
+# wider final canvas. The body is centered so mirroring works correctly.
 _CHAR_DRAW_W = 64
-_BODY_X_OFFSET = (CHAR_BASE_W - _CHAR_DRAW_W) // 2  # 12 for 88-wide canvas
+_BODY_X_OFFSET = (CHAR_BASE_W - _CHAR_DRAW_W) // 2  # 28 for 120-wide
+_BODY_CENTER_X = _BODY_X_OFFSET + 32  # 60 — center of body on final canvas
+
+# Pencil dimensions
+_PENCIL_LEN = 80
+_PENCIL_HALF = _PENCIL_LEN // 2
+_PENCIL_THICKNESS = 4  # half-height
 
 
 # ---------------------------------------------------------------------------
-# Character body drawing (all on 64-wide internal canvas, unchanged)
+# Character body drawing (64-wide internal canvas)
 # ---------------------------------------------------------------------------
 
-def _sketchy_rect(draw: ImageDraw.Draw, bbox, outline=BLACK, fill=None, width=2):
+def _sketchy_rect(draw, bbox, outline=BLACK, fill=None, width=2):
     x0, y0, x1, y1 = bbox
     if fill:
         draw.rectangle(bbox, fill=fill)
@@ -54,8 +60,7 @@ def _sketchy_rect(draw: ImageDraw.Draw, bbox, outline=BLACK, fill=None, width=2)
     draw.line(pts, fill=outline, width=width)
 
 
-def _sketchy_circle(draw: ImageDraw.Draw, center, radius, outline=BLACK,
-                    fill=None, width=2):
+def _sketchy_circle(draw, center, radius, outline=BLACK, fill=None, width=2):
     cx, cy = center
     bbox = (cx - radius, cy - radius, cx + radius, cy + radius)
     if fill:
@@ -63,14 +68,11 @@ def _sketchy_circle(draw: ImageDraw.Draw, center, radius, outline=BLACK,
     draw.ellipse(bbox, outline=outline, width=width)
 
 
-def _draw_body(draw: ImageDraw.Draw, offset_y=0):
-    body_x0, body_y0 = 14, 8 + offset_y
-    body_x1, body_y1 = 50, 52 + offset_y
-    _sketchy_rect(draw, (body_x0, body_y0, body_x1, body_y1), fill=WHITE, width=2)
-    return body_x0, body_y0, body_x1, body_y1
+def _draw_body(draw, offset_y=0):
+    _sketchy_rect(draw, (14, 8 + offset_y, 50, 52 + offset_y), fill=WHITE, width=2)
 
 
-def _draw_face(draw: ImageDraw.Draw, offset_y=0, expression="normal"):
+def _draw_face(draw, offset_y=0, expression="normal"):
     _sketchy_circle(draw, (26, 22 + offset_y), 7, fill=WHITE, width=2)
     _sketchy_circle(draw, (40, 20 + offset_y), 6, fill=WHITE, width=2)
 
@@ -90,144 +92,182 @@ def _draw_face(draw: ImageDraw.Draw, offset_y=0, expression="normal"):
         draw.ellipse((37, 17 + offset_y, 43, 23 + offset_y), fill=PUPIL)
         _sketchy_circle(draw, (32, 40 + offset_y), 5, fill=MOUTH, width=2)
 
+    # Tie
     pts = [(30, 48 + offset_y), (27, 52 + offset_y), (33, 52 + offset_y)]
     draw.polygon(pts, fill=BLACK, outline=BLACK)
 
 
-def _draw_legs(draw: ImageDraw.Draw, frame=0, offset_y=0):
+def _draw_legs(draw, frame=0, offset_y=0):
     base_y = 52 + offset_y
     foot_y = 70 + offset_y
-    leg_positions = {
-        0: [(26, 20), (38, 44)],
-        1: [(26, 24), (38, 40)],
-        2: [(26, 32), (38, 32)],
-        3: [(26, 22), (38, 42)],
+    leg_x = {
+        0: [(20, 44)], 1: [(24, 40)], 2: [(32, 32)], 3: [(22, 42)],
     }
-    lx, rx = leg_positions.get(frame, leg_positions[1])
-    draw.line([(26, base_y), (lx[1], foot_y)], fill=BLACK, width=2)
-    draw.line([(38, base_y), (rx[1], foot_y)], fill=BLACK, width=2)
-    draw.ellipse((lx[1] - 4, foot_y - 2, lx[1] + 4, foot_y + 4), fill=BLACK)
-    draw.ellipse((rx[1] - 4, foot_y - 2, rx[1] + 4, foot_y + 4), fill=BLACK)
+    lx, rx = leg_x.get(frame, leg_x[1])[0]
+    draw.line([(26, base_y), (lx, foot_y)], fill=BLACK, width=2)
+    draw.line([(38, base_y), (rx, foot_y)], fill=BLACK, width=2)
+    draw.ellipse((lx - 4, foot_y - 2, lx + 4, foot_y + 4), fill=BLACK)
+    draw.ellipse((rx - 4, foot_y - 2, rx + 4, foot_y + 4), fill=BLACK)
 
 
-def _draw_arms(draw: ImageDraw.Draw, frame=0, offset_y=0, holding=False):
-    """Draw stick arms. Returns (right_hand_x, right_hand_y) on 64-wide canvas."""
-    body_left = 14
-    body_right = 50
-    arm_y = 32 + offset_y
-
-    if holding:
-        rh = (58, 20 + offset_y)
-        draw.line([(body_right, arm_y), rh], fill=BLACK, width=2)
-        lh = (6, 40 + offset_y) if frame % 2 == 0 else (8, 36 + offset_y)
-        draw.line([(body_left, arm_y), lh], fill=BLACK, width=2)
-        draw.ellipse((lh[0] - 3, lh[1] - 3, lh[0] + 3, lh[1] + 3), fill=BLACK)
-        draw.ellipse((rh[0] - 3, rh[1] - 3, rh[0] + 3, rh[1] + 3), fill=BLACK)
-        return rh
-
-    right_positions = {0: (58, 40), 1: (56, 34), 2: (58, 26), 3: (56, 34)}
-    left_positions = {0: (4, 26), 1: (6, 34), 2: (4, 40), 3: (6, 34)}
-
-    rh = (right_positions[frame][0], right_positions[frame][1] + offset_y)
-    lh = (left_positions[frame][0], left_positions[frame][1] + offset_y)
-
-    draw.line([(body_right, arm_y), rh], fill=BLACK, width=2)
-    draw.line([(body_left, arm_y), lh], fill=BLACK, width=2)
-    draw.ellipse((rh[0] - 3, rh[1] - 3, rh[0] + 3, rh[1] + 3), fill=BLACK)
-    draw.ellipse((lh[0] - 3, lh[1] - 3, lh[0] + 3, lh[1] + 3), fill=BLACK)
-    return rh
-
-
-def _add_sketch_dots(draw: ImageDraw.Draw):
+def _add_sketch_dots(draw):
     for _ in range(6):
         x = _rng.randint(16, 48)
         y = _rng.randint(10, 50)
         draw.point((x, y), fill=(0, 0, 0, 80))
 
 
-# ---------------------------------------------------------------------------
-# Magic Pencil
-# ---------------------------------------------------------------------------
-
-def _draw_magic_pencil(draw: ImageDraw.Draw, hx, hy, angle_deg,
-                       flip=False, length=18):
-    """Draw the magic pencil extending from hand position.
-
-    hx, hy:     grip position (hand coordinates on the FINAL canvas)
-    angle_deg:  direction the pencil extends (0=right, negative=up)
-    flip:       if True, eraser end is at the far end (for erasing action)
-    length:     pencil length in pixels
-    """
-    a = math.radians(angle_deg)
-    dx, dy = math.cos(a), math.sin(a)
-    w = 2.5
-    nx, ny = -dy * w, dx * w
-
-    def _rect(s, e, color):
-        pts = [
-            (hx + dx * s + nx, hy + dy * s + ny),
-            (hx + dx * e + nx, hy + dy * e + ny),
-            (hx + dx * e - nx, hy + dy * e - ny),
-            (hx + dx * s - nx, hy + dy * s - ny),
-        ]
-        draw.polygon(pts, fill=color, outline=BLACK)
-
-    if not flip:
-        # Normal: eraser near hand → metal → body → tip
-        _rect(0, 3, PENCIL_ERASER)
-        _rect(3, 5, PENCIL_METAL)
-        _rect(5, length - 3, PENCIL_YELLOW)
-        # Pointed tip (triangle)
-        tip_s = length - 3
-        tip_pts = [
-            (hx + dx * tip_s + nx, hy + dy * tip_s + ny),
-            (hx + dx * tip_s - nx, hy + dy * tip_s - ny),
-            (hx + dx * (length + 2), hy + dy * (length + 2)),
-        ]
-        draw.polygon(tip_pts, fill=PENCIL_TIP, outline=BLACK)
-    else:
-        # Flipped: tip near hand → body → metal → eraser far
-        _rect(0, 3, PENCIL_TIP)
-        _rect(3, length - 5, PENCIL_YELLOW)
-        _rect(length - 5, length - 3, PENCIL_METAL)
-        _rect(length - 3, length, PENCIL_ERASER)
-        # Rounded eraser end
-        ex = hx + dx * length
-        ey = hy + dy * length
-        draw.ellipse((ex - 3, ey - 3, ex + 3, ey + 3),
-                     fill=PENCIL_ERASER, outline=BLACK)
-
-
-# ---------------------------------------------------------------------------
-# Composition: character body + magic pencil on the wider canvas
-# ---------------------------------------------------------------------------
-
-def _draw_character(offset_y=0, frame=0, expression="normal", holding=False):
-    """Draw the character body on a 64-wide canvas.
-    Returns (char_image, right_hand_x, right_hand_y).
-    """
+def _draw_char_body(offset_y=0, frame=0, expression="normal"):
+    """Draw character body WITHOUT arms on 64x80 canvas."""
     img = Image.new("RGBA", (_CHAR_DRAW_W, CHAR_BASE_H), TRANSPARENT)
     draw = ImageDraw.Draw(img)
     _draw_body(draw, offset_y)
     _draw_face(draw, offset_y, expression)
-    rh = _draw_arms(draw, frame, offset_y, holding)
     _draw_legs(draw, frame, offset_y)
     _add_sketch_dots(draw)
-    return img, rh[0], rh[1]
+    return img
 
 
-def _compose(char_img, hand_x, hand_y, pencil_angle, pencil_flip=False):
-    """Compose character + magic pencil on the full-width canvas."""
+# ---------------------------------------------------------------------------
+# Giant Magic Pencil — drawn on the final wide canvas
+# ---------------------------------------------------------------------------
+
+def _draw_big_pencil(draw, center_x, pencil_y, tilt=0, flip=False):
+    """Draw the massive magic pencil horizontally above DoodleBob.
+
+    center_x:  horizontal center (typically _BODY_CENTER_X)
+    pencil_y:  vertical center of the pencil
+    tilt:      right-end y-offset (positive = right end lower)
+    flip:      if True, eraser is on the right (for erasing actions)
+    """
+    left_x = center_x - _PENCIL_HALF
+    right_x = center_x + _PENCIL_HALF
+    left_y = pencil_y - tilt
+    right_y = pencil_y + tilt
+    t = _PENCIL_THICKNESS
+
+    def _lerp_y(frac):
+        return left_y + (right_y - left_y) * frac
+
+    def _section_rect(frac_start, frac_end, color):
+        x0 = left_x + _PENCIL_LEN * frac_start
+        x1 = left_x + _PENCIL_LEN * frac_end
+        y0s = _lerp_y(frac_start) - t
+        y1s = _lerp_y(frac_start) + t
+        y0e = _lerp_y(frac_end) - t
+        y1e = _lerp_y(frac_end) + t
+        pts = [(x0, y0s), (x1, y0e), (x1, y1e), (x0, y1s)]
+        draw.polygon(pts, fill=color, outline=BLACK)
+
+    if not flip:
+        # [tip ▸ body ▸ metal ▸ eraser]
+        #  left                    right
+
+        # Graphite tip (pointed triangle)
+        tip_frac = 0.10
+        tip_x = left_x
+        tip_y = _lerp_y(0)
+        body_x = left_x + _PENCIL_LEN * tip_frac
+        body_y_top = _lerp_y(tip_frac) - t
+        body_y_bot = _lerp_y(tip_frac) + t
+        draw.polygon([(tip_x, tip_y), (body_x, body_y_top), (body_x, body_y_bot)],
+                     fill=PENCIL_TIP, outline=BLACK)
+
+        # Yellow body
+        _section_rect(0.10, 0.75, PENCIL_YELLOW)
+        # Shade line on body
+        for frac in [0.30, 0.50, 0.65]:
+            sx = left_x + _PENCIL_LEN * frac
+            sy_top = _lerp_y(frac) - t + 1
+            sy_bot = _lerp_y(frac) + t - 1
+            draw.line([(sx, sy_top), (sx, sy_bot)], fill=PENCIL_YELLOW_SHADE, width=1)
+
+        # Metal ferrule
+        _section_rect(0.75, 0.85, PENCIL_METAL)
+        # Ferrule ridge lines
+        for frac in [0.77, 0.79, 0.81, 0.83]:
+            sx = left_x + _PENCIL_LEN * frac
+            sy_top = _lerp_y(frac) - t + 1
+            sy_bot = _lerp_y(frac) + t - 1
+            draw.line([(sx, sy_top), (sx, sy_bot)], fill=PENCIL_METAL_DARK, width=1)
+
+        # Eraser
+        _section_rect(0.85, 1.0, PENCIL_ERASER)
+
+    else:
+        # Flipped: [eraser ▸ metal ▸ body ▸ tip]
+        _section_rect(0.0, 0.15, PENCIL_ERASER)
+
+        _section_rect(0.15, 0.25, PENCIL_METAL)
+        for frac in [0.17, 0.19, 0.21, 0.23]:
+            sx = left_x + _PENCIL_LEN * frac
+            sy_top = _lerp_y(frac) - t + 1
+            sy_bot = _lerp_y(frac) + t - 1
+            draw.line([(sx, sy_top), (sx, sy_bot)], fill=PENCIL_METAL_DARK, width=1)
+
+        _section_rect(0.25, 0.90, PENCIL_YELLOW)
+        for frac in [0.35, 0.55, 0.70]:
+            sx = left_x + _PENCIL_LEN * frac
+            sy_top = _lerp_y(frac) - t + 1
+            sy_bot = _lerp_y(frac) + t - 1
+            draw.line([(sx, sy_top), (sx, sy_bot)], fill=PENCIL_YELLOW_SHADE, width=1)
+
+        # Pointed tip on right
+        tip_frac = 0.90
+        tip_x = right_x
+        tip_y = _lerp_y(1.0)
+        body_x = left_x + _PENCIL_LEN * tip_frac
+        body_y_top = _lerp_y(tip_frac) - t
+        body_y_bot = _lerp_y(tip_frac) + t
+        draw.polygon([(tip_x, tip_y), (body_x, body_y_top), (body_x, body_y_bot)],
+                     fill=PENCIL_TIP, outline=BLACK)
+
+
+def _draw_pencil_arms(draw, offset_y, pencil_y, tilt=0, grip_spread=22):
+    """Draw both arms reaching UP to hold the giant pencil."""
+    body_left_x = _BODY_X_OFFSET + 14
+    body_right_x = _BODY_X_OFFSET + 50
+    arm_y = 32 + offset_y
+
+    left_grip_x = _BODY_CENTER_X - grip_spread
+    right_grip_x = _BODY_CENTER_X + grip_spread
+
+    left_grip_y = pencil_y - tilt * (grip_spread / _PENCIL_HALF) + _PENCIL_THICKNESS + 1
+    right_grip_y = pencil_y + tilt * (grip_spread / _PENCIL_HALF) + _PENCIL_THICKNESS + 1
+
+    # Arms (lines from body sides up to pencil)
+    draw.line([(body_left_x, arm_y), (left_grip_x, left_grip_y)],
+              fill=BLACK, width=2)
+    draw.line([(body_right_x, arm_y), (right_grip_x, right_grip_y)],
+              fill=BLACK, width=2)
+
+    # Hand blobs gripping pencil
+    r = 3
+    draw.ellipse((left_grip_x - r, left_grip_y - r,
+                  left_grip_x + r, left_grip_y + r), fill=BLACK)
+    draw.ellipse((right_grip_x - r, right_grip_y - r,
+                  right_grip_x + r, right_grip_y + r), fill=BLACK)
+
+
+# ---------------------------------------------------------------------------
+# Composition
+# ---------------------------------------------------------------------------
+
+def _compose(char_body_img, offset_y, pencil_y=5, tilt=0, flip=False,
+             grip_spread=22):
+    """Compose: character body + giant pencil + arms on final canvas."""
     final = Image.new("RGBA", (CHAR_BASE_W, CHAR_BASE_H), TRANSPARENT)
-    final.paste(char_img, (_BODY_X_OFFSET, 0), char_img)
-    final_draw = ImageDraw.Draw(final)
-    _draw_magic_pencil(
-        final_draw,
-        hand_x + _BODY_X_OFFSET,
-        hand_y,
-        pencil_angle,
-        flip=pencil_flip,
-    )
+    draw = ImageDraw.Draw(final)
+
+    # 1) Arms first (behind body)
+    _draw_pencil_arms(draw, offset_y, pencil_y, tilt, grip_spread)
+
+    # 2) Character body on top of arms
+    final.paste(char_body_img, (_BODY_X_OFFSET, 0), char_body_img)
+
+    # 3) Giant pencil on top of everything
+    _draw_big_pencil(draw, _BODY_CENTER_X, pencil_y, tilt, flip)
+
     return final
 
 
@@ -236,93 +276,90 @@ def _compose(char_img, hand_x, hand_y, pencil_angle, pencil_flip=False):
 # ---------------------------------------------------------------------------
 
 def generate_idle_frames() -> list[Image.Image]:
-    """Two frames: slight bobbing, pencil held casually."""
+    """Slight bobbing, pencil held proudly overhead."""
     frames = []
     for i in range(2):
         oy = -1 if i == 0 else 1
-        char_img, hx, hy = _draw_character(oy, frame=1, expression="normal")
-        frames.append(_compose(char_img, hx, hy, pencil_angle=-50))
+        body = _draw_char_body(oy, frame=1, expression="normal")
+        frames.append(_compose(body, oy, pencil_y=4 + (i % 2)))
     return frames
 
 
 def generate_walk_frames() -> list[Image.Image]:
-    """Four frames of walking, pencil carried at a jaunty angle."""
-    angles = [-55, -45, -35, -45]
+    """Walking with pencil bouncing above head."""
     frames = []
     for i in range(4):
         bob = -1 if i % 2 == 0 else 1
-        char_img, hx, hy = _draw_character(bob, frame=i, expression="normal")
-        frames.append(_compose(char_img, hx, hy, pencil_angle=angles[i]))
+        body = _draw_char_body(bob, frame=i, expression="normal")
+        py = 3 + (i % 2) * 2  # pencil bobs with walk
+        frames.append(_compose(body, bob, pencil_y=py))
     return frames
 
 
 def generate_chase_frames() -> list[Image.Image]:
-    """Four frames: angry, pencil pointed forward aggressively."""
+    """Angry, pencil tilted forward aggressively (tip leading)."""
     frames = []
     for i in range(4):
         bob = -2 if i % 2 == 0 else 0
-        char_img, hx, hy = _draw_character(bob, frame=i, expression="angry")
-        frames.append(_compose(char_img, hx, hy, pencil_angle=-15))
+        body = _draw_char_body(bob, frame=i, expression="angry")
+        tilt = 3 + (i % 2)  # right end lower = tip points forward
+        frames.append(_compose(body, bob, pencil_y=5, tilt=tilt))
     return frames
 
 
 def generate_erase_frames() -> list[Image.Image]:
-    """DoodleBob erasing with the pencil's eraser end forward."""
-    angles = [-5, 0, 5, 0]
+    """Eraser end forward — pencil flipped, tilted to jab eraser at target."""
     frames = []
     for i in range(4):
-        char_img, hx, hy = _draw_character(
-            offset_y=0, frame=i, expression="angry", holding=True
-        )
-        frames.append(
-            _compose(char_img, hx, hy, pencil_angle=angles[i], pencil_flip=True)
-        )
+        body = _draw_char_body(0, frame=i, expression="angry")
+        tilt = 3 + (i % 2) * 2
+        frames.append(_compose(body, 0, pencil_y=5, tilt=tilt, flip=True))
     return frames
 
 
 def generate_draw_frames() -> list[Image.Image]:
-    """DoodleBob drawing with the pencil tip forward."""
-    angles = [15, 10, 20, 10]
+    """Tip forward, pencil tilted to draw with the graphite end."""
     frames = []
     for i in range(4):
-        char_img, hx, hy = _draw_character(
-            offset_y=0, frame=i, expression="surprised", holding=True
-        )
-        frames.append(
-            _compose(char_img, hx, hy, pencil_angle=angles[i], pencil_flip=False)
-        )
+        body = _draw_char_body(0, frame=i, expression="surprised")
+        tilt = 4 + (i % 2) * 2
+        frames.append(_compose(body, 0, pencil_y=5, tilt=tilt))
     return frames
 
 
 def generate_approach_frames() -> list[Image.Image]:
-    """Walking toward a window X button, pencil forward menacingly."""
+    """Walking toward window X button, pencil tilted menacingly."""
     frames = []
     for i in range(4):
         bob = -1 if i % 2 == 0 else 1
-        char_img, hx, hy = _draw_character(bob, frame=i, expression="angry")
-        frames.append(_compose(char_img, hx, hy, pencil_angle=-20))
+        body = _draw_char_body(bob, frame=i, expression="angry")
+        tilt = 2 + (i % 2)
+        frames.append(_compose(body, bob, pencil_y=4, tilt=tilt))
     return frames
 
 
 def generate_pencil_sprite() -> Image.Image:
-    """Generate a standalone magic pencil sprite (horizontal, larger)."""
-    w, h = 52, 14
+    """Standalone magic pencil sprite (horizontal, detailed)."""
+    w, h = 64, 16
     img = Image.new("RGBA", (w, h), TRANSPARENT)
     draw = ImageDraw.Draw(img)
     cy = h // 2
-    # Eraser
-    draw.rectangle((1, 2, 7, 11), fill=PENCIL_ERASER, outline=BLACK)
-    # Metal band
-    draw.rectangle((7, 2, 12, 11), fill=PENCIL_METAL, outline=BLACK)
+    t = 5
+    # Tip
+    draw.polygon([(1, cy), (10, cy - t), (10, cy + t)],
+                 fill=PENCIL_TIP, outline=BLACK)
     # Body
-    draw.rectangle((12, 2, 40, 11), fill=PENCIL_YELLOW, outline=BLACK)
-    # Tip (triangle)
-    draw.polygon([(40, 2), (40, 11), (50, cy)], fill=PENCIL_TIP, outline=BLACK)
+    draw.rectangle((10, cy - t, 48, cy + t), fill=PENCIL_YELLOW, outline=BLACK)
+    # Ferrule
+    draw.rectangle((48, cy - t, 54, cy + t), fill=PENCIL_METAL, outline=BLACK)
+    for x in range(49, 54, 2):
+        draw.line([(x, cy - t + 1), (x, cy + t - 1)], fill=PENCIL_METAL_DARK)
+    # Eraser
+    draw.rectangle((54, cy - t, 62, cy + t), fill=PENCIL_ERASER, outline=BLACK)
     return img
 
 
 def generate_cursor_sprite() -> Image.Image:
-    """Generate a simple arrow cursor sprite."""
     size = 24
     img = Image.new("RGBA", (size, size), TRANSPARENT)
     draw = ImageDraw.Draw(img)
@@ -348,12 +385,7 @@ _SPRITE_SETS = {
 
 
 def ensure_sprites_exist(force: bool = False) -> None:
-    """Generate placeholder sprites if they don't already exist.
-
-    Pass force=True to regenerate even if files exist.
-    """
     os.makedirs(SPRITES_DIR, exist_ok=True)
-
     for name, gen_func in _SPRITE_SETS.items():
         first_file = os.path.join(SPRITES_DIR, f"{name}_0.png")
         gif_file = os.path.join(SPRITES_DIR, f"{name}.gif")
@@ -364,22 +396,14 @@ def ensure_sprites_exist(force: bool = False) -> None:
             path = os.path.join(SPRITES_DIR, f"{name}_{i}.png")
             frame.save(path)
 
-    cursor_path = os.path.join(SPRITES_DIR, "cursor.png")
-    if force or not os.path.exists(cursor_path):
-        generate_cursor_sprite().save(cursor_path)
-
-    pencil_path = os.path.join(SPRITES_DIR, "pencil.png")
-    if force or not os.path.exists(pencil_path):
-        generate_pencil_sprite().save(pencil_path)
+    for name, gen_func in [("cursor", generate_cursor_sprite),
+                           ("pencil", generate_pencil_sprite)]:
+        path = os.path.join(SPRITES_DIR, f"{name}.png")
+        if force or not os.path.exists(path):
+            gen_func().save(path)
 
 
 def load_sprite_set(name: str, scale: int = 1) -> list[Image.Image]:
-    """Load a named sprite set from disk.
-
-    Checks for:
-      1. An animated GIF  (e.g. walk.gif)
-      2. Numbered PNGs     (e.g. walk_0.png, walk_1.png, ...)
-    """
     gif_path = os.path.join(SPRITES_DIR, f"{name}.gif")
     if os.path.exists(gif_path):
         gif = Image.open(gif_path)
@@ -412,12 +436,10 @@ def load_sprite_set(name: str, scale: int = 1) -> list[Image.Image]:
             )
         frames.append(img)
         i += 1
-
     return frames
 
 
 def load_single_sprite(name: str, scale: int = 1) -> Image.Image | None:
-    """Load a single sprite image."""
     path = os.path.join(SPRITES_DIR, f"{name}.png")
     if not os.path.exists(path):
         return None

@@ -11,8 +11,8 @@ TRANSPARENT_COLOR = "#010101"
 UPDATE_MS = 33  # ~30 FPS
 
 # Character sprite base size (before scaling)
-# Width is 88 to fit the magic pencil extending from DoodleBob's hand
-CHAR_BASE_W = 88
+# Width is 120 to fit the giant magic pencil held above DoodleBob's head
+CHAR_BASE_W = 120
 CHAR_BASE_H = 80
 
 # Wandering
