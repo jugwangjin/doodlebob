@@ -3,6 +3,13 @@
 Uses a small floating borderless window that moves with the character,
 instead of a full-screen overlay. This avoids all click-through and
 transparency issues on Windows multi-monitor setups.
+
+Keyboard Controls:
+    C — Force cursor steal (with lurking)
+    W — Force window close
+    D — Force screen doodle
+    S — Stop current action (return to wandering)
+    Space — Pause / Resume
 """
 
 from __future__ import annotations
@@ -16,7 +23,10 @@ import tkinter as tk
 from config import TRANSPARENT_COLOR, UPDATE_MS, SPRITE_SCALE, CHAR_BASE_W, CHAR_BASE_H
 from sprite_gen import ensure_sprites_exist
 from character import Character
-from behaviors import WindowCloseBehavior, CursorStealBehavior
+from behaviors import (
+    WindowCloseBehavior, CursorStealBehavior,
+    ScreenDoodleBehavior, ActionScheduler,
+)
 from win_api import enable_dpi_awareness, IS_WINDOWS
 
 log = logging.getLogger(__name__)
@@ -63,10 +73,27 @@ class DoodleBobApp:
             floating=not windowed,
         )
 
+        # Behaviors
         self.window_close_behavior = WindowCloseBehavior(self.character)
         self.cursor_steal_behavior = CursorStealBehavior(
             self.character, self.screen_w, self.screen_h,
         )
+        self.screen_doodle_behavior = ScreenDoodleBehavior(
+            self.character, self.canvas, windowed,
+        )
+
+        # Unified action scheduler — picks actions randomly
+        self.scheduler = ActionScheduler(
+            self.character,
+            [
+                self.window_close_behavior,
+                self.cursor_steal_behavior,
+                self.screen_doodle_behavior,
+            ],
+        )
+
+        # Keyboard bindings
+        self._bind_keys()
 
         atexit.register(self._cleanup)
         self._tray_icon = None
@@ -95,6 +122,45 @@ class DoodleBobApp:
     def _setup_windowed(self):
         self.root.geometry("800x600+100+100")
         self.root.resizable(False, False)
+
+    # ------------------------------------------------------------------
+    # Keyboard controls
+    # ------------------------------------------------------------------
+
+    def _bind_keys(self):
+        self.root.bind("<KeyPress-c>", self._key_cursor_steal)
+        self.root.bind("<KeyPress-w>", self._key_window_close)
+        self.root.bind("<KeyPress-d>", self._key_doodle)
+        self.root.bind("<KeyPress-s>", self._key_stop)
+        self.root.bind("<space>", self._key_pause)
+        self.root.focus_set()
+        log.info("Keyboard bindings: C=cursor steal, W=window close, "
+                 "D=doodle, S=stop, Space=pause")
+
+    def _key_cursor_steal(self, event=None):
+        if self.paused:
+            return
+        log.info("Key: force cursor steal")
+        self.scheduler.force_trigger(self.cursor_steal_behavior)
+
+    def _key_window_close(self, event=None):
+        if self.paused:
+            return
+        log.info("Key: force window close")
+        self.scheduler.force_trigger(self.window_close_behavior)
+
+    def _key_doodle(self, event=None):
+        if self.paused:
+            return
+        log.info("Key: force screen doodle")
+        self.scheduler.force_trigger(self.screen_doodle_behavior)
+
+    def _key_stop(self, event=None):
+        log.info("Key: stop current action")
+        self.scheduler.stop_current()
+
+    def _key_pause(self, event=None):
+        self._toggle_pause()
 
     # ------------------------------------------------------------------
     # System tray
@@ -152,8 +218,7 @@ class DoodleBobApp:
 
     def _update(self):
         if not self.paused:
-            self.window_close_behavior.update()
-            self.cursor_steal_behavior.update()
+            self.scheduler.update()
             self.character.update()
 
         if not self.windowed:
@@ -169,6 +234,8 @@ class DoodleBobApp:
     def run(self):
         log.info("DoodleBob starting! Screen: %dx%d, Windowed: %s",
                  self.screen_w, self.screen_h, self.windowed)
+        log.info("Controls: C=cursor steal, W=window close, D=doodle, "
+                 "S=stop, Space=pause")
         self.root.after(UPDATE_MS, self._update)
         try:
             self.root.mainloop()

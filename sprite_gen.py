@@ -13,7 +13,10 @@ import math
 import random as _rng
 from PIL import Image, ImageDraw
 
-from config import SPRITES_DIR, CHAR_BASE_W, CHAR_BASE_H
+from config import (
+    SPRITES_DIR, CHAR_BASE_W, CHAR_BASE_H,
+    SPRITE_SHEET_BG, SPRITE_SHEET_COLS, SPRITE_SHEET_LAYOUT,
+)
 
 _rng.seed(42)
 
@@ -29,6 +32,8 @@ PENCIL_METAL = (175, 175, 180, 255)
 PENCIL_METAL_DARK = (140, 140, 148, 255)
 PENCIL_ERASER = (220, 110, 110, 255)
 TRANSPARENT = (0, 0, 0, 0)
+GLOW_YELLOW = (255, 240, 80, 255)
+GLOW_YELLOW_DIM = (200, 180, 50, 180)
 
 # The character body is drawn on a 64x80 canvas, then composited onto the
 # wider final canvas. The body is centered so mirroring works correctly.
@@ -357,6 +362,67 @@ def generate_pencil_press_frames() -> list[Image.Image]:
     return frames
 
 
+def generate_lurk_frames() -> list[Image.Image]:
+    """Dark silhouette with glowing eyes — lurking before a cursor steal."""
+    frames = []
+    for i in range(2):
+        img = Image.new("RGBA", (CHAR_BASE_W, CHAR_BASE_H), TRANSPARENT)
+        draw = ImageDraw.Draw(img)
+
+        # Dark shadowy body silhouette
+        cx = CHAR_BASE_W // 2
+        draw.rectangle(
+            (cx - 18, 15, cx + 18, 58),
+            fill=(15, 15, 20, 200),
+        )
+
+        # Glowing eyes — alternate between brighter and dimmer
+        eye_color = GLOW_YELLOW if i == 0 else GLOW_YELLOW_DIM
+        glow_r = 5 if i == 0 else 4
+        left_eye = (cx - 8, 28)
+        right_eye = (cx + 6, 26)
+        draw.ellipse(
+            (left_eye[0] - glow_r, left_eye[1] - glow_r,
+             left_eye[0] + glow_r, left_eye[1] + glow_r),
+            fill=eye_color,
+        )
+        draw.ellipse(
+            (right_eye[0] - glow_r, right_eye[1] - glow_r,
+             right_eye[0] + glow_r, right_eye[1] + glow_r),
+            fill=eye_color,
+        )
+
+        # Bright pupils
+        pr = 2
+        draw.ellipse(
+            (left_eye[0] - pr, left_eye[1] - pr,
+             left_eye[0] + pr, left_eye[1] + pr),
+            fill=(255, 255, 200, 255),
+        )
+        draw.ellipse(
+            (right_eye[0] - pr, right_eye[1] - pr,
+             right_eye[0] + pr, right_eye[1] + pr),
+            fill=(255, 255, 200, 255),
+        )
+
+        frames.append(img)
+    return frames
+
+
+def generate_doodle_frames() -> list[Image.Image]:
+    """DoodleBob leaning forward, pencil tip touching down to draw on screen."""
+    frames = []
+    tilts = [6, 8, 7, 5]
+    pencil_ys = [10, 14, 12, 8]
+    for i in range(4):
+        bob = -1 if i % 2 == 0 else 0
+        body = _draw_char_body(bob, frame=i, expression="normal")
+        frames.append(
+            _compose(body, bob, pencil_y=pencil_ys[i], tilt=tilts[i])
+        )
+    return frames
+
+
 def generate_pencil_sprite() -> Image.Image:
     """Standalone magic pencil sprite (horizontal, detailed)."""
     w, h = 64, 16
@@ -401,6 +467,8 @@ _SPRITE_SETS = {
     "draw": generate_draw_frames,
     "approach": generate_approach_frames,
     "pencil_press": generate_pencil_press_frames,
+    "lurk": generate_lurk_frames,
+    "doodle": generate_doodle_frames,
 }
 
 
@@ -456,6 +524,55 @@ def load_sprite_set(name: str, scale: int = 1) -> list[Image.Image]:
             )
         frames.append(img)
         i += 1
+
+    # Fall back to sprite sheet if no individual PNGs found
+    if not frames:
+        frames = _load_from_sheet(name, scale)
+
+    return frames
+
+
+def _load_from_sheet(name: str, scale: int = 1) -> list[Image.Image]:
+    """Try to load sprite frames from a sprite sheet."""
+    sheet_path = os.path.join(SPRITES_DIR, "spritesheet.png")
+    if not os.path.exists(sheet_path):
+        return []
+
+    row_idx = -1
+    expected_frames = 0
+    for i, (row_name, frame_count) in enumerate(SPRITE_SHEET_LAYOUT):
+        if row_name == name:
+            row_idx = i
+            expected_frames = frame_count
+            break
+    if row_idx < 0:
+        return []
+
+    sheet = Image.open(sheet_path).convert("RGBA")
+    cell_w = sheet.width // SPRITE_SHEET_COLS
+    cell_h = sheet.height // len(SPRITE_SHEET_LAYOUT)
+
+    frames = []
+    for col in range(expected_frames):
+        x = col * cell_w
+        y = row_idx * cell_h
+        cell = sheet.crop((x, y, x + cell_w, y + cell_h))
+
+        # Remove background color — replace sheet BG with transparency
+        pixels = cell.load()
+        bg = SPRITE_SHEET_BG[:3]
+        for py in range(cell.height):
+            for px in range(cell.width):
+                r, g, b, a = pixels[px, py]
+                if abs(r - bg[0]) < 10 and abs(g - bg[1]) < 10 and abs(b - bg[2]) < 10:
+                    pixels[px, py] = (0, 0, 0, 0)
+
+        # Resize to target: base_size * scale
+        target_w = CHAR_BASE_W * scale
+        target_h = CHAR_BASE_H * scale
+        if cell.width != target_w or cell.height != target_h:
+            cell = cell.resize((target_w, target_h), Image.NEAREST)
+        frames.append(cell)
     return frames
 
 
@@ -467,3 +584,85 @@ def load_single_sprite(name: str, scale: int = 1) -> Image.Image | None:
     if scale != 1:
         img = img.resize((img.width * scale, img.height * scale), Image.NEAREST)
     return img
+
+
+# ---------------------------------------------------------------------------
+# Sprite sheet assembly / splitting
+# ---------------------------------------------------------------------------
+
+def create_sprite_sheet(output_path: str | None = None, scale: int = 1) -> str:
+    """Assemble all sprite sets into a single sprite sheet image.
+
+    Returns the output path.
+    """
+    ensure_sprites_exist()
+
+    cell_w = CHAR_BASE_W * scale
+    cell_h = CHAR_BASE_H * scale
+    cols = SPRITE_SHEET_COLS
+    rows = len(SPRITE_SHEET_LAYOUT)
+
+    sheet = Image.new("RGBA", (cols * cell_w, rows * cell_h), SPRITE_SHEET_BG)
+
+    for row_idx, (name, frame_count) in enumerate(SPRITE_SHEET_LAYOUT):
+        frames = load_sprite_set(name, scale=scale)
+        for col in range(min(frame_count, len(frames))):
+            x = col * cell_w
+            y = row_idx * cell_h
+            sheet.paste(frames[col], (x, y), frames[col])
+
+        # Pad shorter sets by repeating last frame
+        if len(frames) < frame_count and frames:
+            for col in range(len(frames), frame_count):
+                x = col * cell_w
+                y = row_idx * cell_h
+                sheet.paste(frames[-1], (x, y), frames[-1])
+
+    if output_path is None:
+        output_path = os.path.join(SPRITES_DIR, "spritesheet.png")
+
+    sheet.save(output_path)
+    return output_path
+
+
+def split_sprite_sheet(sheet_path: str, output_dir: str | None = None) -> None:
+    """Split a sprite sheet back into individual PNG files.
+
+    The sheet must follow SPRITE_SHEET_LAYOUT grid (4 columns).
+    Sprites are saved at the detected cell resolution.
+    """
+    if output_dir is None:
+        output_dir = SPRITES_DIR
+    os.makedirs(output_dir, exist_ok=True)
+
+    sheet = Image.open(sheet_path).convert("RGBA")
+    cols = SPRITE_SHEET_COLS
+    rows = len(SPRITE_SHEET_LAYOUT)
+    cell_w = sheet.width // cols
+    cell_h = sheet.height // rows
+
+    for row_idx, (name, frame_count) in enumerate(SPRITE_SHEET_LAYOUT):
+        for col in range(frame_count):
+            x = col * cell_w
+            y = row_idx * cell_h
+            cell = sheet.crop((x, y, x + cell_w, y + cell_h))
+
+            # Remove sheet background
+            pixels = cell.load()
+            bg = SPRITE_SHEET_BG[:3]
+            for py in range(cell.height):
+                for px in range(cell.width):
+                    r, g, b, a = pixels[px, py]
+                    if abs(r - bg[0]) < 10 and abs(g - bg[1]) < 10 and abs(b - bg[2]) < 10:
+                        pixels[px, py] = (0, 0, 0, 0)
+
+            # Resize to base resolution if needed
+            if cell_w != CHAR_BASE_W or cell_h != CHAR_BASE_H:
+                cell = cell.resize(
+                    (CHAR_BASE_W, CHAR_BASE_H), Image.NEAREST
+                )
+
+            path = os.path.join(output_dir, f"{name}_{col}.png")
+            cell.save(path)
+
+    print(f"Split {rows} rows × {cols} cols → {output_dir}")
