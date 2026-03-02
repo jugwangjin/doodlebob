@@ -6,9 +6,9 @@ transparency issues on Windows multi-monitor setups.
 
 Keyboard Controls:
     C — Force cursor steal (with lurking)
-    W — Force window close
     D — Force screen doodle
     S — Stop current action (return to wandering)
+    B — Toggle behaviors on/off (off = only wander)
     Space — Pause / Resume
 """
 
@@ -24,8 +24,8 @@ from config import TRANSPARENT_COLOR, UPDATE_MS, SPRITE_SCALE, CHAR_BASE_W, CHAR
 from sprite_gen import ensure_sprites_exist
 from character import Character
 from behaviors import (
-    WindowCloseBehavior, CursorStealBehavior,
-    ScreenDoodleBehavior, ActionScheduler,
+    CursorStealBehavior, ScreenDoodleBehavior,
+    ActionScheduler,
 )
 from win_api import enable_dpi_awareness, IS_WINDOWS
 
@@ -38,6 +38,7 @@ class DoodleBobApp:
     def __init__(self, windowed: bool = False):
         self.windowed = windowed
         self.paused = False
+        self.behaviors_enabled = True  # False = only wander
 
         enable_dpi_awareness()
         ensure_sprites_exist()
@@ -73,23 +74,16 @@ class DoodleBobApp:
             floating=not windowed,
         )
 
-        # Behaviors
-        self.window_close_behavior = WindowCloseBehavior(self.character)
+        # Behaviors (cursor steal + screen doodle only)
         self.cursor_steal_behavior = CursorStealBehavior(
             self.character, self.screen_w, self.screen_h,
         )
         self.screen_doodle_behavior = ScreenDoodleBehavior(
             self.character, self.canvas, windowed,
         )
-
-        # Unified action scheduler — picks actions randomly
         self.scheduler = ActionScheduler(
             self.character,
-            [
-                self.window_close_behavior,
-                self.cursor_steal_behavior,
-                self.screen_doodle_behavior,
-            ],
+            [self.cursor_steal_behavior, self.screen_doodle_behavior],
         )
 
         # Keyboard bindings
@@ -128,39 +122,53 @@ class DoodleBobApp:
     # ------------------------------------------------------------------
 
     def _bind_keys(self):
-        self.root.bind("<KeyPress-c>", self._key_cursor_steal)
-        self.root.bind("<KeyPress-w>", self._key_window_close)
-        self.root.bind("<KeyPress-d>", self._key_doodle)
-        self.root.bind("<KeyPress-s>", self._key_stop)
-        self.root.bind("<space>", self._key_pause)
+        """Bind keys on both root and canvas, and use bind_all so keys work without focus."""
+        for widget in (self.root, self.canvas):
+            widget.bind("<KeyPress-c>", self._key_cursor_steal)
+            widget.bind("<KeyPress-d>", self._key_doodle)
+            widget.bind("<KeyPress-s>", self._key_stop)
+            widget.bind("<KeyPress-b>", self._key_toggle_behaviors)
+            widget.bind("<space>", self._key_pause)
         self.root.focus_set()
-        log.info("Keyboard bindings: C=cursor steal, W=window close, "
-                 "D=doodle, S=stop, Space=pause")
+        self.canvas.focus_set()
+        self.root.bind_all("<KeyPress-c>", self._key_cursor_steal)
+        self.root.bind_all("<KeyPress-d>", self._key_doodle)
+        self.root.bind_all("<KeyPress-s>", self._key_stop)
+        self.root.bind_all("<KeyPress-b>", self._key_toggle_behaviors)
+        self.root.bind_all("<space>", self._key_pause)
+        log.info("Keyboard bindings: C=cursor steal, D=doodle, S=stop, B=behaviors on/off, Space=pause")
 
     def _key_cursor_steal(self, event=None):
-        if self.paused:
+        if self.paused or not self.behaviors_enabled:
             return
         log.info("Key: force cursor steal")
         self.scheduler.force_trigger(self.cursor_steal_behavior)
-
-    def _key_window_close(self, event=None):
-        if self.paused:
-            return
-        log.info("Key: force window close")
-        self.scheduler.force_trigger(self.window_close_behavior)
+        return "break"
 
     def _key_doodle(self, event=None):
-        if self.paused:
+        if self.paused or not self.behaviors_enabled:
             return
         log.info("Key: force screen doodle")
         self.scheduler.force_trigger(self.screen_doodle_behavior)
+        return "break"
 
     def _key_stop(self, event=None):
         log.info("Key: stop current action")
         self.scheduler.stop_current()
+        return "break"
+
+    def _key_toggle_behaviors(self, event=None):
+        if self.paused:
+            return
+        self.behaviors_enabled = not self.behaviors_enabled
+        if not self.behaviors_enabled:
+            self.scheduler.stop_current()
+        log.info("Behaviors %s", "on" if self.behaviors_enabled else "off (wander only)")
+        return "break"
 
     def _key_pause(self, event=None):
         self._toggle_pause()
+        return "break"
 
     # ------------------------------------------------------------------
     # System tray
@@ -218,7 +226,8 @@ class DoodleBobApp:
 
     def _update(self):
         if not self.paused:
-            self.scheduler.update()
+            if self.behaviors_enabled:
+                self.scheduler.update()
             self.character.update()
 
         if not self.windowed:
@@ -234,8 +243,7 @@ class DoodleBobApp:
     def run(self):
         log.info("DoodleBob starting! Screen: %dx%d, Windowed: %s",
                  self.screen_w, self.screen_h, self.windowed)
-        log.info("Controls: C=cursor steal, W=window close, D=doodle, "
-                 "S=stop, Space=pause")
+        log.info("Controls: C=cursor steal, D=doodle, S=stop, B=behaviors on/off, Space=pause")
         self.root.after(UPDATE_MS, self._update)
         try:
             self.root.mainloop()

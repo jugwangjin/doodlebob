@@ -59,21 +59,32 @@ def make_window_clickthrough(hwnd_int: int) -> None:
 # ---------------------------------------------------------------------------
 # Cursor visibility
 # ---------------------------------------------------------------------------
+# Windows ShowCursor uses a reference count; cursor is visible when count >= 0.
+# We force-hide by calling ShowCursor(FALSE) until count < 0, and restore by
+# calling ShowCursor(TRUE) until count >= 0.
 
 def hide_cursor() -> None:
-    """Hide the system cursor (Windows only)."""
+    """Hide the system cursor (Windows only). Force-hides via ref-count loop."""
     if not IS_WINDOWS:
         log.debug("hide_cursor: no-op on non-Windows")
         return
-    ctypes.windll.user32.ShowCursor(False)
+    ShowCursor = ctypes.windll.user32.ShowCursor
+    ShowCursor.argtypes = [wintypes.BOOL]
+    ShowCursor.restype = wintypes.INT
+    while ShowCursor(0) >= 0:  # FALSE = 0
+        pass
 
 
 def show_cursor() -> None:
-    """Show the system cursor (Windows only)."""
+    """Show the system cursor (Windows only). Restores visibility via ref-count."""
     if not IS_WINDOWS:
         log.debug("show_cursor: no-op on non-Windows")
         return
-    ctypes.windll.user32.ShowCursor(True)
+    ShowCursor = ctypes.windll.user32.ShowCursor
+    ShowCursor.argtypes = [wintypes.BOOL]
+    ShowCursor.restype = wintypes.INT
+    while ShowCursor(1) < 0:  # TRUE = 1
+        pass
 
 
 def set_cursor_pos(x: int, y: int) -> None:

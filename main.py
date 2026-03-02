@@ -45,6 +45,26 @@ def main():
         "--split-sheet", type=str, default=None, metavar="PATH",
         help="Split a sprite sheet into individual sprite PNGs and exit",
     )
+    parser.add_argument(
+        "--sheet-cols", type=int, default=None,
+        help="Actual columns in the sheet image (e.g. 6 for 9×6 grid). Default: 4",
+    )
+    parser.add_argument(
+        "--skip-cols", type=str, default=None, metavar="LIST",
+        help="Comma-separated 0-based column indices to skip. If sprite 1 and 3 are transparent, try 1,4 instead of 2,5.",
+    )
+    parser.add_argument(
+        "--green", action="store_true",
+        help="Same as default: remove background (detected from sheet corners). Kept for compatibility.",
+    )
+    parser.add_argument(
+        "--bg", type=str, default=None, metavar="R,G,B",
+        help="Use this RGB as background to remove (e.g. 0,255,0 or 192,192,192). Default: auto-detect from corners.",
+    )
+    parser.add_argument(
+        "--chroma-tolerance", type=int, default=40,
+        help="Chroma key tolerance 0..255 (default 40). Larger = more pixels removed as background.",
+    )
     args = parser.parse_args()
 
     if args.generate or args.regenerate:
@@ -74,7 +94,6 @@ def main():
             "draw": "Drawing/redrawing cursor",
             "pencil_press": "Jabbing pencil to press close button",
             "lurk": "Lurking with glowing eyes (pre-chase)",
-            "doodle": "Drawing doodles on screen",
         }
         for i, (name, _) in enumerate(SPRITE_SHEET_LAYOUT):
             desc = descriptions.get(name, "")
@@ -83,7 +102,19 @@ def main():
 
     if args.split_sheet:
         from sprite_gen import split_sprite_sheet
-        split_sprite_sheet(args.split_sheet)
+        skip_cols = None
+        if args.skip_cols is not None:
+            skip_cols = tuple(int(s.strip()) for s in args.skip_cols.split(","))
+        bg_rgb = None
+        if args.bg is not None:
+            bg_rgb = tuple(int(s.strip()) for s in args.bg.split(","))
+        split_sprite_sheet(
+            args.split_sheet,
+            sheet_cols=args.sheet_cols,
+            skip_columns=skip_cols,
+            background_rgb=bg_rgb,
+            chroma_tolerance=args.chroma_tolerance,
+        )
         print("Sprite sheet split into individual PNGs in assets/sprites/")
         return
 

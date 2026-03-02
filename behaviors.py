@@ -1,4 +1,4 @@
-"""DoodleBob behaviors: window closing, cursor stealing, screen doodling, and action scheduling."""
+"""DoodleBob behaviors: cursor stealing, screen doodling, and action scheduling."""
 
 from __future__ import annotations
 
@@ -7,9 +7,7 @@ import random
 import time
 
 from config import (
-    WINDOW_CLOSE_MIN_DELAY_S, WINDOW_CLOSE_MAX_DELAY_S,
     CURSOR_STEAL_MIN_DELAY_S, CURSOR_STEAL_MAX_DELAY_S,
-    CURSOR_HIDE_DURATION_S,
     LURK_DURATION_S,
     DOODLE_MIN_DELAY_S, DOODLE_MAX_DELAY_S,
     DOODLE_DRAW_DURATION_S, DOODLE_FADE_DURATION_S,
@@ -17,76 +15,11 @@ from config import (
 )
 from character import Character, State
 from win_api import (
-    pick_random_window, close_window,
     hide_cursor, show_cursor, set_cursor_pos, get_cursor_pos,
     IS_WINDOWS,
 )
 
 log = logging.getLogger(__name__)
-
-
-# ---------------------------------------------------------------------------
-# Window Close Behavior
-# ---------------------------------------------------------------------------
-
-class WindowCloseBehavior:
-    """Walks DoodleBob to a random window's X button and closes it."""
-
-    def __init__(self, character: Character):
-        self.character = character
-        self.active = False
-        self.available = IS_WINDOWS
-        self._on_complete: callable = None
-
-    @property
-    def delay_range(self) -> tuple[float, float]:
-        return WINDOW_CLOSE_MIN_DELAY_S, WINDOW_CLOSE_MAX_DELAY_S
-
-    def trigger(self, on_complete: callable = None):
-        """Start the window close sequence."""
-        self._on_complete = on_complete
-        if not self.available:
-            log.debug("WindowClose: not available on this platform")
-            self._finish()
-            return
-
-        target = pick_random_window()
-        if target is None:
-            log.debug("WindowClose: no closeable windows found")
-            self._finish()
-            return
-
-        hwnd, title, x_btn_x, x_btn_y = target
-        log.info("WindowClose: targeting '%s' at (%d, %d)", title, x_btn_x, x_btn_y)
-        self.active = True
-
-        def on_reached():
-            def on_press_done():
-                close_window(hwnd)
-                log.info("WindowClose: closed '%s'", title)
-                self.character.return_to_wander()
-                self._finish()
-            self.character.start_pencil_press(on_press_done)
-
-        self.character.start_approach_window(hwnd, x_btn_x, x_btn_y, on_reached)
-
-    def update(self):
-        """Mid-action per-frame update (no-op for this behavior)."""
-        pass
-
-    def cancel(self):
-        """Cancel the active window close action."""
-        if self.active:
-            self.active = False
-            self.character.return_to_wander()
-            self._finish()
-
-    def _finish(self):
-        self.active = False
-        if self._on_complete:
-            cb = self._on_complete
-            self._on_complete = None
-            cb()
 
 
 # ---------------------------------------------------------------------------
@@ -96,8 +29,7 @@ class WindowCloseBehavior:
 class CursorStealBehavior:
     """Chases the cursor, 'erases' it, and 'redraws' it elsewhere.
 
-    Now includes a lurking phase: DoodleBob moves to a screen edge, shows
-    glowing eyes for a moment, then charges at the cursor.
+    Lurking phase: play lurk (glowing eyes) at current position, then charge at cursor.
     """
 
     def __init__(self, character: Character, screen_w: int, screen_h: int):
@@ -116,45 +48,24 @@ class CursorStealBehavior:
         return CURSOR_STEAL_MIN_DELAY_S, CURSOR_STEAL_MAX_DELAY_S
 
     def trigger(self, on_complete: callable = None):
-        """Start the cursor steal sequence (with lurking)."""
+        """Start the cursor steal sequence: lurk at current position, then charge at cursor."""
         self._on_complete = on_complete
         self.active = True
 
-        # Phase 1: Move to nearest screen edge
-        edge_x, edge_y = self._pick_edge_position()
-        log.info("CursorSteal: lurking to edge (%d, %d)", edge_x, edge_y)
+        def on_lurk_done():
+            cx, cy = get_cursor_pos()
+            log.info("CursorSteal: charging at cursor (%d, %d)", cx, cy)
+            self.character.start_lurk_charge(cx, cy, self._on_caught)
 
-        def on_edge_reached():
-            # Phase 2: Lurk (show glowing eyes)
-            log.info("CursorSteal: lurking... eyes glowing")
-
-            def on_lurk_done():
-                # Phase 3: Charge at cursor
-                cx, cy = get_cursor_pos()
-                log.info("CursorSteal: charging at cursor (%d, %d)", cx, cy)
-                self.character.start_lurk_charge(cx, cy, self._on_caught)
-
-            self.character.start_lurk_wait(LURK_DURATION_S, on_lurk_done)
-
-        self.character.start_lurk(edge_x, edge_y, on_edge_reached)
-
-    def _pick_edge_position(self) -> tuple[int, int]:
-        """Pick a position along a screen edge for lurking."""
-        margin = self.character.display_w // 2 + 10
-        edge = random.choice(["left", "right", "top", "bottom"])
-        if edge == "left":
-            return margin, random.randint(100, self.screen_h - 100)
-        elif edge == "right":
-            return self.screen_w - margin, random.randint(100, self.screen_h - 100)
-        elif edge == "top":
-            return random.randint(100, self.screen_w - 100), margin
-        else:
-            return random.randint(100, self.screen_w - 100), self.screen_h - margin
+        log.info("CursorSteal: lurking at current position (eyes glowing)")
+        self.character.start_lurk_wait(LURK_DURATION_S, on_lurk_done)
 
     def update(self):
-        """Mid-action per-frame update: keep updating cursor target while chasing."""
+        """Mid-action per-frame update: keep updating cursor target while chasing; keep cursor hidden until draw done."""
         if not self.active:
             return
+        if self._cursor_hidden:
+            hide_cursor()  # re-apply every frame so Windows doesn't show cursor on mouse move etc.
         if self.character.state in (State.CHASING_CURSOR, State.LURK_CHARGING):
             cx, cy = get_cursor_pos()
             self.character.update_cursor_target(cx, cy)
@@ -175,13 +86,14 @@ class CursorStealBehavior:
 
     def _on_reached_draw_pos(self):
         log.info("CursorSteal: reached draw position, drawing cursor")
+        hide_cursor()  # keep hidden during draw; only show in on_draw_done
 
         def on_draw_done():
             log.info("CursorSteal: draw done, restoring cursor at (%d, %d)",
                      self._redraw_x, self._redraw_y)
+            self._cursor_hidden = False  # do first so this frame's update() won't call hide_cursor()
             set_cursor_pos(self._redraw_x, self._redraw_y)
-            show_cursor()
-            self._cursor_hidden = False
+            show_cursor()  # only place we show; do not call hide_cursor() before or after
             self.character.return_to_wander()
             self._finish()
 
@@ -217,7 +129,6 @@ class CursorStealBehavior:
 
 class ScreenDoodleBehavior:
     """DoodleBob draws messy scribbles on the screen with the magic pencil.
-
     Only produces visual doodle lines in windowed mode.
     """
 
@@ -239,7 +150,6 @@ class ScreenDoodleBehavior:
         self._on_complete = on_complete
         self.active = True
 
-        # Walk to a random position, then doodle
         tx = random.randint(150, self.character.screen_w - 150)
         ty = random.randint(150, self.character.screen_h - 150)
         log.info("ScreenDoodle: walking to (%d, %d) to doodle", tx, ty)
@@ -262,25 +172,18 @@ class ScreenDoodleBehavior:
         """Draw random scribble lines on the canvas near the character."""
         cx, cy = int(self.character.x), int(self.character.y)
         expire = time.time() + DOODLE_DRAW_DURATION_S + DOODLE_FADE_DURATION_S
-
         colors = ["#CCCC44", "#DDDD55", "#BBBB33", "#AAAA22"]
-
         for _ in range(DOODLE_LINE_COUNT):
-            # Random walk scribble
             points = []
             x, y = cx + random.randint(-20, 20), cy + random.randint(-20, 20)
-            num_segments = random.randint(4, 10)
-            for _ in range(num_segments):
+            for _ in range(random.randint(4, 10)):
                 x += random.randint(-40, 40)
                 y += random.randint(-40, 40)
                 points.extend([x, y])
-
             if len(points) >= 4:
                 item_id = self.canvas.create_line(
-                    *points,
-                    fill=random.choice(colors),
-                    width=random.choice([1, 2, 3]),
-                    smooth=True,
+                    *points, fill=random.choice(colors),
+                    width=random.choice([1, 2, 3]), smooth=True,
                 )
                 self._doodle_items.append((item_id, expire))
 
@@ -293,7 +196,6 @@ class ScreenDoodleBehavior:
             if time_left <= 0:
                 self.canvas.delete(item_id)
             elif time_left < DOODLE_FADE_DURATION_S:
-                # Step-wise fade: change color toward background
                 frac = time_left / DOODLE_FADE_DURATION_S
                 if frac < 0.33:
                     self.canvas.itemconfig(item_id, fill="#444444")
@@ -305,10 +207,8 @@ class ScreenDoodleBehavior:
         self._doodle_items = remaining
 
     def cancel(self):
-        """Cancel the active doodle action."""
         if self.active:
             self.active = False
-            # Clean up doodle lines
             for item_id, _ in self._doodle_items:
                 self.canvas.delete(item_id)
             self._doodle_items.clear()
@@ -358,7 +258,7 @@ class ActionScheduler:
 
     def update(self):
         """Called every frame. Manages behavior updates and scheduling."""
-        # Update all behaviors (for mid-action tracking and doodle fade)
+        # Update all behaviors (for mid-action tracking)
         for b in self.behaviors:
             b.update()
 

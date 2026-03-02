@@ -18,9 +18,9 @@ DoodleBob is a Python (tkinter) desktop pet that runs as a transparent always-on
 
 ### Keyboard Controls (in-app)
 - `C` — Force cursor steal (with lurking)
-- `W` — Force window close
 - `D` — Force screen doodle
 - `S` — Stop current action (return to wandering)
+- `B` — Toggle behaviors on/off (off = only wander)
 - `Space` — Pause / Resume
 
 ### Key caveats
@@ -29,11 +29,11 @@ DoodleBob is a Python (tkinter) desktop pet that runs as a transparent always-on
 - Window closing and cursor hiding are no-ops on non-Windows platforms. The character still walks and animates.
 - Sprites are auto-generated on first run. To force regeneration, delete `assets/sprites/` and run again.
 - The sprite loading order is: animated GIF → numbered PNGs → sprite sheet fallback → auto-generated placeholder.
-- Pencil particle effects and screen doodle visuals are only visible in windowed mode.
+- Pencil particle effects are only visible in windowed mode.
 - The ActionScheduler randomly picks between behaviors; timing is per-behavior (see `config.py`).
 
 ### Testing
 - Run `python main.py --windowed` and verify the character appears and walks around.
-- Press keyboard shortcuts to test each behavior: C for cursor steal (with lurking), D for doodle, S to stop.
+- Press keyboard shortcuts to test each behavior: C for cursor steal (with lurking), S to stop.
 - On Windows, verify overlay transparency, window closing, and cursor stealing behaviors.
 - No automated test suite exists yet; testing is manual/visual.

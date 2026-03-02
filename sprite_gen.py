@@ -11,6 +11,7 @@ DoodleBob himself, held above his head with both hands.
 import os
 import math
 import random as _rng
+from collections import Counter
 from PIL import Image, ImageDraw
 
 from config import (
@@ -625,35 +626,97 @@ def create_sprite_sheet(output_path: str | None = None, scale: int = 1) -> str:
     return output_path
 
 
-def split_sprite_sheet(sheet_path: str, output_dir: str | None = None) -> None:
+def _detect_background_from_corners(sheet: Image.Image, sample_size: int = 5) -> tuple[int, int, int]:
+    """Sample four corners of the sheet and return the most common RGB (background)."""
+    w, h = sheet.width, sheet.height
+    pixels = sheet.load()
+    samples = []
+    for (cx, cy) in [
+        (0, 0),
+        (w - sample_size, 0),
+        (0, h - sample_size),
+        (w - sample_size, h - sample_size),
+    ]:
+        for dx in range(sample_size):
+            for dy in range(sample_size):
+                x = min(max(cx + dx, 0), w - 1)
+                y = min(max(cy + dy, 0), h - 1)
+                r, g, b, a = pixels[x, y]
+                samples.append((r, g, b))
+    # Most common color
+    cnt = Counter(samples)
+    return cnt.most_common(1)[0][0]
+
+
+def split_sprite_sheet(
+    sheet_path: str,
+    output_dir: str | None = None,
+    sheet_cols: int | None = None,
+    skip_columns: tuple[int, ...] | None = None,
+    background_rgb: tuple[int, int, int] | None = None,
+    chroma_tolerance: int = 40,
+) -> None:
     """Split a sprite sheet back into individual PNG files.
 
-    The sheet must follow SPRITE_SHEET_LAYOUT grid (4 columns).
+    The sheet must follow SPRITE_SHEET_LAYOUT grid (logically 4 columns per row).
     Sprites are saved at the detected cell resolution.
+
+    If the image has more columns than 4 (e.g. 9×6 with empty columns), set
+    sheet_cols to the actual column count and skip_columns to the 0-based
+    indices of columns to skip (e.g. sheet_cols=6, skip_columns=(2, 5)).
+
+    background_rgb: (r,g,b) to treat as background and make transparent.
+        None = auto-detect from sheet corners (green, gray, etc.).
+    chroma_tolerance: max per-channel difference to still count as background (default 40).
     """
     if output_dir is None:
         output_dir = SPRITES_DIR
     os.makedirs(output_dir, exist_ok=True)
 
     sheet = Image.open(sheet_path).convert("RGBA")
-    cols = SPRITE_SHEET_COLS
+
+    if background_rgb is None:
+        background_rgb = _detect_background_from_corners(sheet)
+        print(f"Background from corners: RGB{background_rgb}")
+    if background_rgb is None:
+        background_rgb = SPRITE_SHEET_BG[:3]
     rows = len(SPRITE_SHEET_LAYOUT)
-    cell_w = sheet.width // cols
+    if sheet_cols is None:
+        sheet_cols = SPRITE_SHEET_COLS
+    if skip_columns is None:
+        used_column_indices = tuple(range(min(SPRITE_SHEET_COLS, sheet_cols)))
+    else:
+        used_column_indices = tuple(
+            sorted(i for i in range(sheet_cols) if i not in skip_columns)
+        )
+
+    cell_w = sheet.width // sheet_cols
     cell_h = sheet.height // rows
+
+    print(f"Using physical columns: {used_column_indices} (logical 0..{len(used_column_indices)-1} → these cols)")
+    print(f"Chroma key: RGB{background_rgb} tolerance={chroma_tolerance}")
 
     for row_idx, (name, frame_count) in enumerate(SPRITE_SHEET_LAYOUT):
         for col in range(frame_count):
-            x = col * cell_w
-            y = row_idx * cell_h
+            if col >= len(used_column_indices):
+                break
+            phys_col = used_column_indices[col]
+            x = int(phys_col * cell_w)
+            y = int(row_idx * cell_h)
             cell = sheet.crop((x, y, x + cell_w, y + cell_h))
+            cell = cell.convert("RGBA")  # ensure alpha channel for transparency
 
-            # Remove sheet background
+            # Remove sheet background (chroma key)
             pixels = cell.load()
-            bg = SPRITE_SHEET_BG[:3]
+            br, bg, bb = background_rgb
             for py in range(cell.height):
                 for px in range(cell.width):
                     r, g, b, a = pixels[px, py]
-                    if abs(r - bg[0]) < 10 and abs(g - bg[1]) < 10 and abs(b - bg[2]) < 10:
+                    if (
+                        abs(r - br) <= chroma_tolerance
+                        and abs(g - bg) <= chroma_tolerance
+                        and abs(b - bb) <= chroma_tolerance
+                    ):
                         pixels[px, py] = (0, 0, 0, 0)
 
             # Resize to base resolution if needed
@@ -661,8 +724,10 @@ def split_sprite_sheet(sheet_path: str, output_dir: str | None = None) -> None:
                 cell = cell.resize(
                     (CHAR_BASE_W, CHAR_BASE_H), Image.NEAREST
                 )
+            if cell.mode != "RGBA":
+                cell = cell.convert("RGBA")
 
             path = os.path.join(output_dir, f"{name}_{col}.png")
-            cell.save(path)
+            cell.save(path, "PNG")
 
-    print(f"Split {rows} rows × {cols} cols → {output_dir}")
+    print(f"Split {rows} rows × {len(used_column_indices)} cols (sheet {sheet_cols} cols, skip {skip_columns or ()}) → {output_dir}")
