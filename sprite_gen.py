@@ -338,6 +338,25 @@ def generate_approach_frames() -> list[Image.Image]:
     return frames
 
 
+def generate_pencil_press_frames() -> list[Image.Image]:
+    """DoodleBob jabbing the pencil tip to press a close button.
+
+    Tip forward (flip=True puts tip on the right / facing direction).
+    Frames: wind-up → swing → impact → recoil.
+    """
+    tilts = [-2, 3, 8, 2]
+    offsets = [0, -1, -2, 0]
+    pencil_ys = [3, 7, 12, 5]
+    frames = []
+    for i in range(4):
+        body = _draw_char_body(offsets[i], frame=i % 2, expression="angry")
+        frames.append(
+            _compose(body, offsets[i], pencil_y=pencil_ys[i],
+                     tilt=tilts[i], flip=True)
+        )
+    return frames
+
+
 def generate_pencil_sprite() -> Image.Image:
     """Standalone magic pencil sprite (horizontal, detailed)."""
     w, h = 64, 16
@@ -381,6 +400,7 @@ _SPRITE_SETS = {
     "erase": generate_erase_frames,
     "draw": generate_draw_frames,
     "approach": generate_approach_frames,
+    "pencil_press": generate_pencil_press_frames,
 }
 
 

@@ -10,10 +10,10 @@ import tkinter as tk
 from PIL import Image, ImageTk
 
 from config import (
-    CHAR_BASE_W, CHAR_BASE_H, SPRITE_SCALE,
-    WANDER_SPEED, WANDER_DIR_CHANGE_MIN_S, WANDER_DIR_CHANGE_MAX_S,
+    CHAR_BASE_W, CHAR_BASE_H, SPRITE_SCALE, UPDATE_MS,
+    WANDER_SPEED_FRACTION, WANDER_DIR_CHANGE_MIN_S, WANDER_DIR_CHANGE_MAX_S,
     IDLE_PAUSE_CHANCE, IDLE_PAUSE_MIN_S, IDLE_PAUSE_MAX_S,
-    WINDOW_CLOSE_APPROACH_SPEED, CURSOR_CHASE_SPEED, CURSOR_CATCH_RADIUS,
+    WINDOW_CLOSE_APPROACH_SPEED_MULT, CURSOR_CHASE_ARRIVAL_S, CURSOR_CATCH_RADIUS,
     ANIM_FPS,
 )
 from sprite_gen import load_sprite_set, load_single_sprite
@@ -23,8 +23,10 @@ class State(enum.Enum):
     IDLE = "idle"
     WANDERING = "walk"
     APPROACHING_WINDOW = "approach"
+    PENCIL_PRESSING = "pencil_press"
     CHASING_CURSOR = "chase"
     ERASING = "erase"
+    WALKING_TO_DRAW = "walk_to_draw"
     DRAWING = "draw"
 
 
@@ -46,7 +48,12 @@ class Character:
         self.x = random.randint(100, screen_w - 100)
         self.y = random.randint(100, screen_h - 100)
 
-        # Movement
+        # Movement — speeds derived from screen size
+        fps = 1000.0 / UPDATE_MS
+        long_axis = max(screen_w, screen_h)
+        self.wander_speed = WANDER_SPEED_FRACTION * long_axis / fps
+        self.approach_speed = self.wander_speed * WINDOW_CLOSE_APPROACH_SPEED_MULT
+
         self.vx = 0.0
         self.vy = 0.0
         self.facing_right = True
@@ -60,6 +67,9 @@ class Character:
         self.target_y: int | None = None
         self.on_target_reached: callable = None
         self._target_hwnd: int | None = None
+
+        # Chase timing
+        self._chase_start_time: float = 0.0
 
         # Timing
         self._direction_change_time = time.time() + random.uniform(
@@ -84,7 +94,7 @@ class Character:
         """Load all sprite sets."""
         import logging
         log = logging.getLogger(__name__)
-        for name in ("idle", "walk", "chase", "erase", "draw", "approach"):
+        for name in ("idle", "walk", "chase", "erase", "draw", "approach", "pencil_press"):
             pil_frames = load_sprite_set(name, scale=SPRITE_SCALE)
             if not pil_frames:
                 log.warning("No sprites for '%s', falling back to idle", name)
@@ -100,14 +110,15 @@ class Character:
 
     def _current_sprite_key(self) -> str:
         base = self.state.value
-        if not self.facing_right:
-            return f"{base}_l"
-        return base
+        if self.state == State.WALKING_TO_DRAW:
+            base = "walk"
+        suffix = "" if self.facing_right else "_l"
+        return base + suffix
 
     def _pick_wander_direction(self):
         angle = random.uniform(0, 2 * math.pi)
-        self.vx = math.cos(angle) * WANDER_SPEED
-        self.vy = math.sin(angle) * WANDER_SPEED
+        self.vx = math.cos(angle) * self.wander_speed
+        self.vy = math.sin(angle) * self.wander_speed
         self.facing_right = self.vx >= 0
         self._direction_change_time = time.time() + random.uniform(
             WANDER_DIR_CHANGE_MIN_S, WANDER_DIR_CHANGE_MAX_S
@@ -144,11 +155,12 @@ class Character:
         self.on_target_reached = callback
 
     def start_chase_cursor(self, cursor_x: int, cursor_y: int, callback: callable):
-        """Begin chasing the cursor."""
+        """Begin chasing the cursor — guaranteed arrival in CURSOR_CHASE_ARRIVAL_S."""
         self.set_state(State.CHASING_CURSOR)
         self.target_x = cursor_x
         self.target_y = cursor_y
         self.on_target_reached = callback
+        self._chase_start_time = time.time()
 
     def start_erase(self, callback: callable):
         """Play the erase animation."""
@@ -156,10 +168,23 @@ class Character:
         self._anim_start = time.time()
         self.on_target_reached = callback
 
+    def start_pencil_press(self, callback: callable):
+        """Play the pencil-press animation (jabbing X button)."""
+        self.set_state(State.PENCIL_PRESSING)
+        self._anim_start = time.time()
+        self.on_target_reached = callback
+
     def start_draw(self, callback: callable):
         """Play the draw animation."""
         self.set_state(State.DRAWING)
         self._anim_start = time.time()
+        self.on_target_reached = callback
+
+    def start_walk_to_draw(self, target_x: int, target_y: int, callback: callable):
+        """Walk to target position (used after erasing cursor, before drawing)."""
+        self.set_state(State.WALKING_TO_DRAW)
+        self.target_x = target_x
+        self.target_y = target_y
         self.on_target_reached = callback
 
     def return_to_wander(self):
@@ -183,8 +208,10 @@ class Character:
             self._update_approach()
         elif self.state == State.CHASING_CURSOR:
             self._update_chase()
-        elif self.state in (State.ERASING, State.DRAWING):
+        elif self.state in (State.ERASING, State.DRAWING, State.PENCIL_PRESSING):
             self._update_action_anim(now)
+        elif self.state == State.WALKING_TO_DRAW:
+            self._update_walk_to_draw()
 
         self._clamp_position()
         self._update_animation(now)
@@ -224,7 +251,7 @@ class Character:
     def _update_approach(self):
         if self.target_x is not None and self.target_y is not None:
             reached = self.move_toward(
-                self.target_x, self.target_y, WINDOW_CLOSE_APPROACH_SPEED
+                self.target_x, self.target_y, self.approach_speed
             )
             if reached and self.on_target_reached:
                 cb = self.on_target_reached
@@ -233,16 +260,21 @@ class Character:
 
     def _update_chase(self):
         if self.target_x is not None and self.target_y is not None:
+            elapsed = time.time() - self._chase_start_time
+            remaining = CURSOR_CHASE_ARRIVAL_S - elapsed
             dist = math.hypot(self.target_x - self.x, self.target_y - self.y)
-            if dist <= CURSOR_CATCH_RADIUS:
+
+            if remaining <= 0 or dist <= CURSOR_CATCH_RADIUS:
+                self.x = float(self.target_x)
+                self.y = float(self.target_y)
                 if self.on_target_reached:
                     cb = self.on_target_reached
                     self.on_target_reached = None
                     cb()
             else:
-                self.move_toward(
-                    self.target_x, self.target_y, CURSOR_CHASE_SPEED
-                )
+                fps = 1000.0 / UPDATE_MS
+                speed = max(dist / remaining / fps, 1.0)
+                self.move_toward(self.target_x, self.target_y, speed)
 
     def _update_action_anim(self, now: float):
         """For erase/draw: play through animation frames then callback."""
@@ -253,6 +285,16 @@ class Character:
 
         if now - self._anim_start >= anim_duration:
             if self.on_target_reached:
+                cb = self.on_target_reached
+                self.on_target_reached = None
+                cb()
+
+    def _update_walk_to_draw(self):
+        if self.target_x is not None and self.target_y is not None:
+            reached = self.move_toward(
+                self.target_x, self.target_y, self.wander_speed
+            )
+            if reached and self.on_target_reached:
                 cb = self.on_target_reached
                 self.on_target_reached = None
                 cb()

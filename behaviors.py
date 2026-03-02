@@ -60,10 +60,12 @@ class WindowCloseBehavior:
         self.active = True
 
         def on_reached():
-            close_window(hwnd)
-            log.info("WindowClose: closed '%s'", title)
-            self.character.return_to_wander()
-            self._schedule_next()
+            def on_press_done():
+                close_window(hwnd)
+                log.info("WindowClose: closed '%s'", title)
+                self.character.return_to_wander()
+                self._schedule_next()
+            self.character.start_pencil_press(on_press_done)
 
         self.character.start_approach_window(hwnd, x_btn_x, x_btn_y, on_reached)
 
@@ -77,7 +79,9 @@ class CursorStealBehavior:
         self.screen_h = screen_h
         self.active = False
         self._cursor_hidden = False
-        self.enabled = IS_WINDOWS  # Only works on Windows (requires cursor hiding)
+        self._redraw_x = 0
+        self._redraw_y = 0
+        self.enabled = True
         self._schedule_next()
 
     def _schedule_next(self):
@@ -116,18 +120,20 @@ class CursorStealBehavior:
         self.character.start_chase_cursor(cx, cy, on_caught)
 
     def _on_erase_done(self):
-        log.info("CursorSteal: erase done, relocating cursor")
-        # Move to random position on screen
-        new_x = random.randint(50, self.screen_w - 50)
-        new_y = random.randint(50, self.screen_h - 50)
+        log.info("CursorSteal: erase done, walking to new draw position")
+        self._redraw_x = random.randint(50, self.screen_w - 50)
+        self._redraw_y = random.randint(50, self.screen_h - 50)
+        self.character.start_walk_to_draw(
+            self._redraw_x, self._redraw_y, self._on_reached_draw_pos,
+        )
 
-        # Teleport character near new cursor location
-        self.character.x = new_x - 40
-        self.character.y = new_y
+    def _on_reached_draw_pos(self):
+        log.info("CursorSteal: reached draw position, drawing cursor")
 
         def on_draw_done():
-            log.info("CursorSteal: draw done, restoring cursor at (%d, %d)", new_x, new_y)
-            set_cursor_pos(new_x, new_y)
+            log.info("CursorSteal: draw done, restoring cursor at (%d, %d)",
+                     self._redraw_x, self._redraw_y)
+            set_cursor_pos(self._redraw_x, self._redraw_y)
             show_cursor()
             self._cursor_hidden = False
             self.character.return_to_wander()
