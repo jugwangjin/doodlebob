@@ -7,6 +7,7 @@ import random
 import time
 
 from config import (
+    WINDOW_CLOSE_MIN_DELAY_S, WINDOW_CLOSE_MAX_DELAY_S,
     CURSOR_STEAL_MIN_DELAY_S, CURSOR_STEAL_MAX_DELAY_S,
     LURK_DURATION_S,
     DOODLE_MIN_DELAY_S, DOODLE_MAX_DELAY_S,
@@ -15,11 +16,71 @@ from config import (
 )
 from character import Character, State
 from win_api import (
+    pick_random_window, close_window,
     hide_cursor, show_cursor, set_cursor_pos, get_cursor_pos,
     IS_WINDOWS,
 )
 
 log = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Window Close Behavior
+# ---------------------------------------------------------------------------
+
+class WindowCloseBehavior:
+    """Walks DoodleBob to a random window's X button and closes it."""
+
+    def __init__(self, character: Character):
+        self.character = character
+        self.active = False
+        self.available = IS_WINDOWS
+        self._on_complete: callable = None
+
+    @property
+    def delay_range(self) -> tuple[float, float]:
+        return WINDOW_CLOSE_MIN_DELAY_S, WINDOW_CLOSE_MAX_DELAY_S
+
+    def trigger(self, on_complete: callable = None):
+        self._on_complete = on_complete
+        if not self.available:
+            log.debug("WindowClose: not available on this platform")
+            self._finish()
+            return
+        target = pick_random_window()
+        if target is None:
+            log.debug("WindowClose: no closeable windows found")
+            self._finish()
+            return
+        hwnd, title, x_btn_x, x_btn_y = target
+        log.info("WindowClose: targeting '%s' at (%d, %d)", title, x_btn_x, x_btn_y)
+        self.active = True
+
+        def on_reached():
+            def on_press_done():
+                close_window(hwnd)
+                log.info("WindowClose: closed '%s'", title)
+                self.character.return_to_wander()
+                self._finish()
+            self.character.start_pencil_press(on_press_done)
+
+        self.character.start_approach_window(hwnd, x_btn_x, x_btn_y, on_reached)
+
+    def update(self):
+        pass
+
+    def cancel(self):
+        if self.active:
+            self.active = False
+            self.character.return_to_wander()
+            self._finish()
+
+    def _finish(self):
+        self.active = False
+        if self._on_complete:
+            cb = self._on_complete
+            self._on_complete = None
+            cb()
 
 
 # ---------------------------------------------------------------------------
@@ -32,16 +93,26 @@ class CursorStealBehavior:
     Lurking phase: play lurk (glowing eyes) at current position, then charge at cursor.
     """
 
-    def __init__(self, character: Character, screen_w: int, screen_h: int):
+    def __init__(self, character: Character, screen_w: int, screen_h: int,
+                 region_left: int = 0, region_top: int = 0):
         self.character = character
         self.screen_w = screen_w
         self.screen_h = screen_h
+        self.region_left = region_left
+        self.region_top = region_top
         self.active = False
         self.available = True
         self._cursor_hidden = False
         self._redraw_x = 0
         self._redraw_y = 0
         self._on_complete: callable = None
+
+    def _cursor_pos_in_region(self) -> tuple[int, int]:
+        """Return current cursor position in region coordinates (clamped to region)."""
+        cx, cy = get_cursor_pos()
+        rx = max(0, min(self.screen_w, cx - self.region_left))
+        ry = max(0, min(self.screen_h, cy - self.region_top))
+        return rx, ry
 
     @property
     def delay_range(self) -> tuple[float, float]:
@@ -53,7 +124,7 @@ class CursorStealBehavior:
         self.active = True
 
         def on_lurk_done():
-            cx, cy = get_cursor_pos()
+            cx, cy = self._cursor_pos_in_region()
             log.info("CursorSteal: charging at cursor (%d, %d)", cx, cy)
             self.character.start_lurk_charge(cx, cy, self._on_caught)
 
@@ -65,9 +136,10 @@ class CursorStealBehavior:
         if not self.active:
             return
         if self._cursor_hidden:
-            hide_cursor()  # re-apply every frame so Windows doesn't show cursor on mouse move etc.
+            hide_cursor()
+            set_cursor_pos(-10000, -10000)  # off-screen so even if Windows shows cursor, user won't see it
         if self.character.state in (State.CHASING_CURSOR, State.LURK_CHARGING):
-            cx, cy = get_cursor_pos()
+            cx, cy = self._cursor_pos_in_region()
             self.character.update_cursor_target(cx, cy)
 
     def _on_caught(self):
@@ -92,7 +164,7 @@ class CursorStealBehavior:
             log.info("CursorSteal: draw done, restoring cursor at (%d, %d)",
                      self._redraw_x, self._redraw_y)
             self._cursor_hidden = False  # do first so this frame's update() won't call hide_cursor()
-            set_cursor_pos(self._redraw_x, self._redraw_y)
+            set_cursor_pos(self._redraw_x + self.region_left, self._redraw_y + self.region_top)
             show_cursor()  # only place we show; do not call hide_cursor() before or after
             self.character.return_to_wander()
             self._finish()
@@ -115,6 +187,14 @@ class CursorStealBehavior:
             cb = self._on_complete
             self._on_complete = None
             cb()
+
+    def keep_cursor_hidden_if_needed(self):
+        """Call once per frame (e.g. at end of update loop) to re-apply hide; counters Windows showing cursor mid-frame.
+        Only touch cursor while action is still active — after draw done we set active=False and must not touch cursor."""
+        if not self.active or not self._cursor_hidden:
+            return
+        hide_cursor()
+        set_cursor_pos(-10000, -10000)
 
     def cleanup(self):
         """Ensure cursor is visible when app exits."""

@@ -18,10 +18,12 @@ DoodleBob is a Python (tkinter) desktop pet that runs as a transparent always-on
 
 ### Keyboard Controls (in-app)
 - `C` — Force cursor steal (with lurking)
+- `W` — Force window close (walk to random window X button)
 - `D` — Force screen doodle
 - `S` — Stop current action (return to wandering)
 - `B` — Toggle behaviors on/off (off = only wander)
 - `Space` — Pause / Resume
+- `Escape` or `Q` — Close app (quit)
 
 ### Key caveats
 - The transparent overlay (`-transparentcolor`) only works on Windows. On Linux, use `--windowed`.

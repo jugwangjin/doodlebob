@@ -14,7 +14,7 @@ from config import (
     WANDER_SPEED_FRACTION, WANDER_DIR_CHANGE_MIN_S, WANDER_DIR_CHANGE_MAX_S,
     IDLE_PAUSE_CHANCE, IDLE_PAUSE_MIN_S, IDLE_PAUSE_MAX_S,
     WINDOW_CLOSE_APPROACH_SPEED_MULT, CURSOR_CHASE_ARRIVAL_S, CURSOR_CATCH_RADIUS,
-    LURK_SPEED_MULT,
+    WALK_TO_DRAW_ARRIVAL_S, LURK_SPEED_MULT,
     ANIM_FPS,
     PARTICLE_SPAWN_INTERVAL_S, PARTICLE_LIFETIME_S,
     PARTICLE_COUNT_PER_SPAWN, PARTICLE_COLORS,
@@ -88,8 +88,9 @@ class Character:
         self.on_target_reached: callable = None
         self._target_hwnd: int | None = None
 
-        # Chase timing
+        # Chase / walk-to-draw timing
         self._chase_start_time: float = 0.0
+        self._walk_to_draw_start_time: float = 0.0
 
         # Timing
         self._direction_change_time = time.time() + random.uniform(
@@ -223,11 +224,12 @@ class Character:
         self.on_target_reached = callback
 
     def start_walk_to_draw(self, target_x: int, target_y: int, callback: callable):
-        """Walk to target position (used after erasing cursor, before drawing)."""
+        """Walk to target position (used after erasing cursor, before drawing). Arrives in WALK_TO_DRAW_ARRIVAL_S."""
         self.set_state(State.WALKING_TO_DRAW)
         self.target_x = target_x
         self.target_y = target_y
         self.on_target_reached = callback
+        self._walk_to_draw_start_time = time.time()
 
     def start_lurk(self, edge_x: int, edge_y: int, callback: callable):
         """Move quickly to screen edge for lurking."""
@@ -381,13 +383,24 @@ class Character:
 
     def _update_walk_to_draw(self):
         if self.target_x is not None and self.target_y is not None:
-            reached = self.move_toward(
-                self.target_x, self.target_y, self.wander_speed
-            )
-            if reached and self.on_target_reached:
-                cb = self.on_target_reached
-                self.on_target_reached = None
-                cb()
+            elapsed = time.time() - self._walk_to_draw_start_time
+            remaining = WALK_TO_DRAW_ARRIVAL_S - elapsed
+            dist = math.hypot(self.target_x - self.x, self.target_y - self.y)
+            if remaining <= 0 or dist <= 4:
+                self.x = float(self.target_x)
+                self.y = float(self.target_y)
+                if self.on_target_reached:
+                    cb = self.on_target_reached
+                    self.on_target_reached = None
+                    cb()
+            else:
+                fps = 1000.0 / UPDATE_MS
+                speed = max(dist / remaining / fps, 1.0)
+                reached = self.move_toward(self.target_x, self.target_y, speed)
+                if reached and self.on_target_reached:
+                    cb = self.on_target_reached
+                    self.on_target_reached = None
+                    cb()
 
     def _clamp_position(self):
         mx = self.display_w // 2 + 4

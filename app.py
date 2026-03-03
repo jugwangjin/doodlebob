@@ -6,10 +6,12 @@ transparency issues on Windows multi-monitor setups.
 
 Keyboard Controls:
     C — Force cursor steal (with lurking)
+    W — Force window close (walk to random window X button)
     D — Force screen doodle
     S — Stop current action (return to wandering)
     B — Toggle behaviors on/off (off = only wander)
     Space — Pause / Resume
+    Escape or Q — Close app (quit)
 """
 
 from __future__ import annotations
@@ -24,7 +26,7 @@ from config import TRANSPARENT_COLOR, UPDATE_MS, SPRITE_SCALE, CHAR_BASE_W, CHAR
 from sprite_gen import ensure_sprites_exist
 from character import Character
 from behaviors import (
-    CursorStealBehavior, ScreenDoodleBehavior,
+    WindowCloseBehavior, CursorStealBehavior, ScreenDoodleBehavior,
     ActionScheduler,
 )
 from win_api import enable_dpi_awareness, IS_WINDOWS
@@ -74,16 +76,21 @@ class DoodleBobApp:
             floating=not windowed,
         )
 
-        # Behaviors (cursor steal + screen doodle only)
+        # Behaviors: window close, cursor steal, screen doodle
+        self.window_close_behavior = WindowCloseBehavior(self.character)
         self.cursor_steal_behavior = CursorStealBehavior(
-            self.character, self.screen_w, self.screen_h,
+            self.character, self.screen_w, self.screen_h, 0, 0,
         )
         self.screen_doodle_behavior = ScreenDoodleBehavior(
             self.character, self.canvas, windowed,
         )
         self.scheduler = ActionScheduler(
             self.character,
-            [self.cursor_steal_behavior, self.screen_doodle_behavior],
+            [
+                self.window_close_behavior,
+                self.cursor_steal_behavior,
+                self.screen_doodle_behavior,
+            ],
         )
 
         # Keyboard bindings
@@ -98,11 +105,7 @@ class DoodleBobApp:
     # ------------------------------------------------------------------
 
     def _setup_floating(self):
-        """Small borderless window that follows the character across the desktop.
-
-        -transparentcolor makes the canvas background invisible so only
-        the character sprite is visible. No full-screen overlay needed.
-        """
+        """Small borderless window that follows the character across the full screen."""
         self.root.overrideredirect(True)
         self.root.wm_attributes("-topmost", True)
 
@@ -111,7 +114,7 @@ class DoodleBobApp:
 
         self.root.config(bg=TRANSPARENT_COLOR)
         self.root.geometry(f"{self.sprite_w}x{self.sprite_h}+100+100")
-        log.info("Floating window: %dx%d", self.sprite_w, self.sprite_h)
+        log.info("Floating window: %dx%d (full screen)", self.sprite_w, self.sprite_h)
 
     def _setup_windowed(self):
         self.root.geometry("800x600+100+100")
@@ -125,24 +128,37 @@ class DoodleBobApp:
         """Bind keys on both root and canvas, and use bind_all so keys work without focus."""
         for widget in (self.root, self.canvas):
             widget.bind("<KeyPress-c>", self._key_cursor_steal)
+            widget.bind("<KeyPress-w>", self._key_window_close)
             widget.bind("<KeyPress-d>", self._key_doodle)
             widget.bind("<KeyPress-s>", self._key_stop)
             widget.bind("<KeyPress-b>", self._key_toggle_behaviors)
             widget.bind("<space>", self._key_pause)
+            widget.bind("<Escape>", self._key_quit)
+            widget.bind("<KeyPress-q>", self._key_quit)
         self.root.focus_set()
         self.canvas.focus_set()
         self.root.bind_all("<KeyPress-c>", self._key_cursor_steal)
+        self.root.bind_all("<KeyPress-w>", self._key_window_close)
         self.root.bind_all("<KeyPress-d>", self._key_doodle)
         self.root.bind_all("<KeyPress-s>", self._key_stop)
         self.root.bind_all("<KeyPress-b>", self._key_toggle_behaviors)
         self.root.bind_all("<space>", self._key_pause)
-        log.info("Keyboard bindings: C=cursor steal, D=doodle, S=stop, B=behaviors on/off, Space=pause")
+        self.root.bind_all("<Escape>", self._key_quit)
+        self.root.bind_all("<KeyPress-q>", self._key_quit)
+        log.info("Keyboard bindings: C=cursor steal, W=window close, D=doodle, S=stop, B=behaviors, Space=pause, Esc/Q=quit")
 
     def _key_cursor_steal(self, event=None):
         if self.paused or not self.behaviors_enabled:
             return
         log.info("Key: force cursor steal")
         self.scheduler.force_trigger(self.cursor_steal_behavior)
+        return "break"
+
+    def _key_window_close(self, event=None):
+        if self.paused or not self.behaviors_enabled:
+            return
+        log.info("Key: force window close")
+        self.scheduler.force_trigger(self.window_close_behavior)
         return "break"
 
     def _key_doodle(self, event=None):
@@ -168,6 +184,13 @@ class DoodleBobApp:
 
     def _key_pause(self, event=None):
         self._toggle_pause()
+        return "break"
+
+    def _key_quit(self, event=None):
+        log.info("Key: close window")
+        self._cleanup()
+        self.root.quit()
+        self.root.destroy()
         return "break"
 
     # ------------------------------------------------------------------
@@ -238,12 +261,13 @@ class DoodleBobApp:
             except tk.TclError:
                 pass
 
+        self.cursor_steal_behavior.keep_cursor_hidden_if_needed()
         self.root.after(UPDATE_MS, self._update)
 
     def run(self):
         log.info("DoodleBob starting! Screen: %dx%d, Windowed: %s",
                  self.screen_w, self.screen_h, self.windowed)
-        log.info("Controls: C=cursor steal, D=doodle, S=stop, B=behaviors on/off, Space=pause")
+        log.info("Controls: C=cursor steal, W=window close, D=doodle, S=stop, B=behaviors, Space=pause, Esc/Q=quit")
         self.root.after(UPDATE_MS, self._update)
         try:
             self.root.mainloop()

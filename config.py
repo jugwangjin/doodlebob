@@ -31,13 +31,14 @@ WINDOW_CLOSE_APPROACH_SPEED_MULT = 0.75  # 0.5 * 1.5
 # Cursor steal behavior
 CURSOR_STEAL_MIN_DELAY_S = 10
 CURSOR_STEAL_MAX_DELAY_S = 15
-CURSOR_CHASE_ARRIVAL_S = 4.0  # 6.0 / 1.5 = faster chase
+CURSOR_CHASE_ARRIVAL_S = 2.0  # time to run to cursor (seconds)
 CURSOR_CATCH_RADIUS = 30
 CURSOR_HIDE_DURATION_S = 1.5
+WALK_TO_DRAW_ARRIVAL_S = 2.0  # time from erase done to draw position (seconds)
 
 # Lurking phase (pre-cursor-steal)
 LURK_DURATION_S = 1.5
-LURK_SPEED_MULT = 1.28  # 0.85 * 1.5
+LURK_SPEED_MULT = 2.24  # 1.28 * 1.75
 
 # Screen doodle behavior
 DOODLE_MIN_DELAY_S = 25
