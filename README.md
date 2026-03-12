@@ -1,89 +1,89 @@
 # DoodleBob 🖊️
 
-A Python (tkinter) desktop pet that runs as a transparent always-on-top overlay on Windows. On Linux/macOS it runs in `--windowed` mode for development/testing.
+Windows에서 투명한 최상위 오버레이로 실행되는 Python (tkinter) 데스크탑 펫입니다. Linux/macOS에서는 개발 및 테스트를 위해 `--windowed` 모드로 실행됩니다.
 
-DoodleBob walks around your screen, randomly closes windows, and steals your cursor with his magic pencil eraser.
+DoodleBob은 화면을 돌아다니며 무작위로 창을 닫거나, 마법 연필 지우개로 커서를 훔치는 등의 장난을 칩니다.
 
-## Features
+## 주요 기능
 
-1. **Random Window Closing** — DoodleBob walks to a random window's X button and closes it. Happens at random intervals.
+1. **무작위 창 닫기** — DoodleBob이 임의의 창의 X 버튼으로 걸어가서 창을 닫습니다. 무작위 간격으로 발생합니다.
 
-2. **Cursor Stealing** — DoodleBob periodically chases your cursor, "erases" it with the magic pencil's eraser end, hides it briefly, then "redraws" it at a random screen position. While the cursor is hidden, it truly disappears.
+2. **커서 훔치기** — 주기적으로 커서를 추격하여 지우개로 "지운" 뒤, 잠시 숨겼다가 화면의 무작위 위치에 다시 "그려" 놓습니다. 커서가 숨겨진 동안에는 실제로 보이지 않습니다.
 
-3. **Autonomous Walking & Lurking** — DoodleBob wanders around the screen or "lurks" near your cursor before attacking.
+3. **자율 보행 및 잠복(Lurking)** — 화면을 자유롭게 배회하거나, 공격하기 전 커서 근처에서 "잠복"하며 기회를 엿봅니다.
 
-4. **Screen Doodling** — DoodleBob can draw random shapes/doodles on your screen.
+4. **화면 낙서(Doodling)** — DoodleBob이 화면에 무작위 도형이나 낙서를 그릴 수 있습니다.
 
-## Requirements
+## 요구 사항
 
 - **Python 3.10+**
-- **Windows 10/11** (for full functionality — overlay, window closing, cursor hiding)
-- `pip install -r requirements.txt` (Pillow, pystray; pywin32 auto-included on Windows only)
-- `python3-tk` system package is required
+- **Windows 10/11** (전체 기능 지원 — 오버레이, 창 닫기, 커서 숨기기 등)
+- `pip install -r requirements.txt` (Pillow, pystray 설치; pywin32는 Windows에서 자동 포함)
+- `python3-tk` 시스템 패키지 필요
 
-## Keyboard Controls (in-app)
+## 키보드 컨트롤 (앱 실행 중)
 
-- `C` — Force cursor steal (with lurking)
-- `W` — Force window close (walk to random window X button)
-- `D` — Force screen doodle
-- `S` — Stop current action (return to wandering)
-- `B` — Toggle behaviors on/off (off = only wander)
-- `Space` — Pause / Resume
-- `Escape` or `Q` — Close app (quit)
+- `C` — 커서 훔치기 강제 실행 (잠복 단계 포함)
+- `W` — 창 닫기 강제 실행 (무작위 창의 X 버튼으로 이동)
+- `D` — 화면 낙서 강제 실행
+- `S` — 현재 행동 중단 (다시 배회 상태로 복귀)
+- `B` — 특수 행동 On/Off 토글 (Off 시 배회만 함)
+- `Space` — 일시정지 / 재개
+- `Escape` 또는 `Q` — 앱 종료
 
-## Quick Start
+## 빠른 시작
 
 ```powershell
-# Install dependencies
+# 의존성 설치
 pip install -r requirements.txt
 
-# Generate placeholder sprites (first time)
+# 플레이스홀더 스프라이트 생성 (최초 1회)
 python main.py --generate
 
-# Run in full-screen overlay mode (Windows)
+# 전체 화면 오버레이 모드로 실행 (Windows 전용)
 python main.py
 
-# Run in windowed mode (for testing / development)
+# 윈도우 모드로 실행 (테스트 및 개발용)
 python main.py --windowed
 
-# Generate a sprite sheet PNG from current sprites
+# 현재 스프라이트들로 스프라이트 시트(PNG) 생성
 python main.py --sheet
 
-# Split an improved sprite sheet back into individual PNGs
+# 개선된 스프라이트 시트를 개별 PNG 파일로 분리
 python main.py --split-sheet path/to/sheet.png
 ```
 
-## Custom Sprites
+## 커스텀 스프라이트
 
-The sprite loading order is: **animated GIF → numbered PNGs → sprite sheet fallback → auto-generated placeholder**.
+스프라이트 로딩 우선순위: **애니메이션 GIF → 번호가 매겨진 PNG들 → 스프라이트 시트 → 자동 생성된 플레이스홀더**.
 
-### Sprite sets
+### 스프라이트 세트
 
-| Name | Purpose | Frames |
+| 이름 | 용도 | 프레임 수 |
 |------|---------|--------|
-| `idle` | Standing still / bobbing | 2 |
-| `walk` | Normal walking | 4 |
-| `chase` | Chasing the cursor (angry) | 4 |
-| `approach` | Walking toward window X button | 4 |
-| `erase` | Erasing cursor with pencil eraser | 4 |
-| `draw` | Redrawing cursor with pencil tip | 4 |
-| `lurk` | Lurking near cursor | 2 |
-| `doodle` | Drawing random shapes | 4 |
-| `pencil_press` | Pencil contact animation | 4 |
+| `idle` | 가만히 서 있기 / 까딱거리기 | 2 |
+| `walk` | 일반 걷기 | 4 |
+| `chase` | 커서 추격 (화남) | 4 |
+| `approach` | 창 X 버튼으로 이동 | 4 |
+| `erase` | 지우개로 커서 지우기 | 4 |
+| `draw` | 연필심으로 커서 다시 그리기 | 4 |
+| `lurk` | 커서 근처에서 잠복 | 2 |
+| `doodle` | 무작위 낙서 그리기 | 4 |
+| `pencil_press` | 연필이 화면에 닿는 애니메이션 | 4 |
 
-Base sprite size: **64×80 pixels**.
+기본 스프라이트 크기: **64×80 픽셀**.
 
-## Configuration
+## 설정
 
-Edit `config.py` to tweak behavior timing, movement speed, animation FPS, etc.
+`config.py` 파일을 수정하여 이동 속도, 애니메이션 FPS, 행동 주기 등을 조절할 수 있습니다.
 
-## Key Caveats
+## 주요 주의사항
 
-- The transparent overlay (`-transparentcolor`) only works on Windows. On Linux, use `--windowed`.
-- System tray icon requires GTK on Linux.
-- Window closing and cursor hiding are no-ops on non-Windows platforms.
-- Pencil particle effects are only visible in windowed mode.
+- 투명 오버레이 기능(`-transparentcolor`)은 Windows에서만 작동합니다. Linux에서는 `--windowed`를 사용하세요.
+- 시스템 트레이 아이콘은 Linux에서 GTK가 필요할 수 있습니다.
+- 창 닫기 및 커서 숨기기 기능은 Windows가 아닌 플랫폼에서는 작동하지 않습니다. (애니메이션만 재생됨)
+- 연필 파티클 효과는 윈도우 모드에서만 보입니다.
 
-## License
+## 라이선스
 
 MIT
