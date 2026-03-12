@@ -36,10 +36,12 @@ TRANSPARENT = (0, 0, 0, 0)
 GLOW_YELLOW = (255, 240, 80, 255)
 GLOW_YELLOW_DIM = (200, 180, 50, 180)
 
-# The character body is drawn on a 64x80 canvas, then composited onto the
-# wider final canvas. The body is centered so mirroring works correctly.
+# The character body is drawn on a 64x80 area, then composited onto the
+# 120x120 final canvas. The body is centered so mirroring works correctly.
 _CHAR_DRAW_W = 64
+_CHAR_DRAW_H = 80
 _BODY_X_OFFSET = (CHAR_BASE_W - _CHAR_DRAW_W) // 2  # 28 for 120-wide
+_BODY_Y_OFFSET = (CHAR_BASE_H - _CHAR_DRAW_H)       # 40 for 120-high, puts feet near bottom
 _BODY_CENTER_X = _BODY_X_OFFSET + 32  # 60 — center of body on final canvas
 
 # Pencil dimensions
@@ -49,7 +51,7 @@ _PENCIL_THICKNESS = 4  # half-height
 
 
 # ---------------------------------------------------------------------------
-# Character body drawing (64-wide internal canvas)
+# Character body drawing (64-wide internal area)
 # ---------------------------------------------------------------------------
 
 def _sketchy_rect(draw, bbox, outline=BLACK, fill=None, width=2):
@@ -124,8 +126,8 @@ def _add_sketch_dots(draw):
 
 
 def _draw_char_body(offset_y=0, frame=0, expression="normal"):
-    """Draw character body WITHOUT arms on 64x80 canvas."""
-    img = Image.new("RGBA", (_CHAR_DRAW_W, CHAR_BASE_H), TRANSPARENT)
+    """Draw character body WITHOUT arms on internal area."""
+    img = Image.new("RGBA", (_CHAR_DRAW_W, _CHAR_DRAW_H), TRANSPARENT)
     draw = ImageDraw.Draw(img)
     _draw_body(draw, offset_y)
     _draw_face(draw, offset_y, expression)
@@ -139,13 +141,9 @@ def _draw_char_body(offset_y=0, frame=0, expression="normal"):
 # ---------------------------------------------------------------------------
 
 def _draw_big_pencil(draw, center_x, pencil_y, tilt=0, flip=False):
-    """Draw the massive magic pencil horizontally above DoodleBob.
-
-    center_x:  horizontal center (typically _BODY_CENTER_X)
-    pencil_y:  vertical center of the pencil
-    tilt:      right-end y-offset (positive = right end lower)
-    flip:      if True, eraser is on the right (for erasing actions)
-    """
+    """Draw the massive magic pencil horizontally above DoodleBob."""
+    # Add vertical buffer for the 120-high canvas
+    pencil_y += 15 
     left_x = center_x - _PENCIL_HALF
     right_x = center_x + _PENCIL_HALF
     left_y = pencil_y - tilt
@@ -261,15 +259,16 @@ def _draw_pencil_arms(draw, offset_y, pencil_y, tilt=0, grip_spread=22):
 
 def _compose(char_body_img, offset_y, pencil_y=5, tilt=0, flip=False,
              grip_spread=22):
-    """Compose: character body + giant pencil + arms on final canvas."""
+    """Compose: character body + giant pencil + arms on final 120x120 canvas."""
     final = Image.new("RGBA", (CHAR_BASE_W, CHAR_BASE_H), TRANSPARENT)
     draw = ImageDraw.Draw(final)
 
     # 1) Arms first (behind body)
-    _draw_pencil_arms(draw, offset_y, pencil_y, tilt, grip_spread)
+    # Adjust arm base Y to match body position on the taller canvas
+    _draw_pencil_arms(draw, offset_y + _BODY_Y_OFFSET, pencil_y + 15, tilt, grip_spread)
 
     # 2) Character body on top of arms
-    final.paste(char_body_img, (_BODY_X_OFFSET, 0), char_body_img)
+    final.paste(char_body_img, (_BODY_X_OFFSET, _BODY_Y_OFFSET), char_body_img)
 
     # 3) Giant pencil on top of everything
     _draw_big_pencil(draw, _BODY_CENTER_X, pencil_y, tilt, flip)
@@ -656,31 +655,51 @@ def split_sprite_sheet(
     background_rgb: tuple[int, int, int] | None = None,
     chroma_tolerance: int = 40,
 ) -> None:
-    """Split a sprite sheet back into individual PNG files.
-
-    The sheet must follow SPRITE_SHEET_LAYOUT grid (logically 4 columns per row).
-    Sprites are saved at the detected cell resolution.
-
-    If the image has more columns than 4 (e.g. 9×6 with empty columns), set
-    sheet_cols to the actual column count and skip_columns to the 0-based
-    indices of columns to skip (e.g. sheet_cols=6, skip_columns=(2, 5)).
-
-    background_rgb: (r,g,b) to treat as background and make transparent.
-        None = auto-detect from sheet corners (green, gray, etc.).
-    chroma_tolerance: max per-channel difference to still count as background (default 40).
-    """
+    """Split a sprite sheet back into individual PNG files."""
     if output_dir is None:
         output_dir = SPRITES_DIR
     os.makedirs(output_dir, exist_ok=True)
 
     sheet = Image.open(sheet_path).convert("RGBA")
 
+    # If background_rgb is not explicitly passed via CLI, DO NOT auto-detect it.
+    # This prevents accidentally removing black lines from transparent RGBA sheets.
+    if background_rgb is not None:
+        print(f"Chroma key enabled: removing RGB{background_rgb} with tolerance={chroma_tolerance}")
+    
+    # Check if this is a single-row 28-column sheet
+    if sheet.width / sheet.height > 10:  # e.g., 3360 / 120 = 28
+        print("Detected single-row horizontal sprite sheet")
+        current_col = 0
+        for name, frame_count in SPRITE_SHEET_LAYOUT:
+            for i in range(frame_count):
+                x = current_col * 120
+                cell = sheet.crop((x, 0, x + 120, sheet.height))
+                
+                # ONLY remove background if background_rgb was explicitly provided
+                if background_rgb is not None:
+                    pixels = cell.load()
+                    br, bg, bb = background_rgb
+                    for py in range(cell.height):
+                        for px in range(cell.width):
+                            r, g, b, a = pixels[px, py]
+                            if (abs(r - br) <= chroma_tolerance and 
+                                abs(g - bg) <= chroma_tolerance and 
+                                abs(b - bb) <= chroma_tolerance):
+                                pixels[px, py] = (0, 0, 0, 0)
+                
+                path = os.path.join(output_dir, f"{name}_{i}.png")
+                cell.save(path, "PNG")
+                current_col += 1
+        print(f"Split single-row sheet into {current_col} sprites (Original pixels preserved).")
+        return
+
+    # Original grid splitting logic (needs a background for non-single-row legacy sheets)
     if background_rgb is None:
         background_rgb = _detect_background_from_corners(sheet)
-        print(f"Background from corners: RGB{background_rgb}")
+        print(f"Background from corners (Legacy grid mode): RGB{background_rgb}")
     if background_rgb is None:
         background_rgb = SPRITE_SHEET_BG[:3]
-    rows = len(SPRITE_SHEET_LAYOUT)
     if sheet_cols is None:
         sheet_cols = SPRITE_SHEET_COLS
     if skip_columns is None:

@@ -61,7 +61,8 @@ class Character:
 
         # Display dimensions
         self.display_w = CHAR_BASE_W * SPRITE_SCALE
-        self.display_h = CHAR_BASE_H * SPRITE_SCALE
+        # 스프라이트 아래에 5px 여유를 두기 위해 높이를 5px 늘림
+        self.display_h = CHAR_BASE_H * SPRITE_SCALE + 5
 
         # Position (center of character)
         self.x = random.randint(100, screen_w - 100)
@@ -147,6 +148,8 @@ class Character:
             base = "walk"
         elif self.state == State.LURK_CHARGING:
             base = "chase"
+        elif self.state == State.DOODLING:
+            base = "draw"
         suffix = "" if self.facing_right else "_l"
         return base + suffix
 
@@ -404,9 +407,10 @@ class Character:
 
     def _clamp_position(self):
         mx = self.display_w // 2 + 4
-        my = self.display_h // 2 + 4
         self.x = max(mx, min(self.screen_w - mx, self.x))
-        self.y = max(my, min(self.screen_h - my, self.y))
+        # (x, y)가 스프라이트 하단 + 5px이므로, 
+        # 화면 맨 위 끝까지 캐릭터를 올리려면 y 최솟값은 윈도우 높이인 display_h가 됨
+        self.y = max(self.display_h, min(self.screen_h, self.y))
 
     def _update_animation(self, now: float):
         if now - self._last_frame_time >= self._frame_interval:
@@ -460,14 +464,11 @@ class Character:
         self._particles = alive
 
     def _spawn_particles(self):
-        # Pencil tip position relative to character center
-        # In right-facing mode: pencil tip is on the left side of the sprite
-        tip_offset_x = -self.display_w // 2 + 10 if self.facing_right else self.display_w // 2 - 10
-        tip_y_offset = -self.display_h // 2 + 10
-
+        # 이제 (x, y)가 스프라이트 하단 5px 지점이므로, 
+        # 연필 팁은 x 기준으로는 중앙, y 기준으로는 (x, y)보다 약간 위(예: 5px 위)에 위치함
         for _ in range(PARTICLE_COUNT_PER_SPAWN):
-            px = self.x + tip_offset_x + random.uniform(-5, 5)
-            py = self.y + tip_y_offset + random.uniform(-3, 3)
+            px = self.x + random.uniform(-10, 10)
+            py = self.y - 5 + random.uniform(-3, 3)
             color = random.choice(PARTICLE_COLORS)
             self._particles.append(Particle(px, py, color))
 
@@ -488,12 +489,13 @@ class Character:
         sprite = frames[idx]
 
         if self.floating:
-            # In floating mode the window moves, sprite stays at canvas center
+            # In floating mode the window moves, sprite stays at canvas center (shifted up 2.5px for 5px bottom margin)
             rx = self.display_w // 2
-            ry = self.display_h // 2
+            ry = (self.display_h - 5) // 2
         else:
             rx = int(self.x)
-            ry = int(self.y)
+            # 기준점 (x, y)가 스프라이트 하단 + 5px 지점이 되도록 함
+            ry = int(self.y) - (self.display_h // 2)
 
         if self._canvas_id is None:
             self._canvas_id = self.canvas.create_image(

@@ -1,27 +1,39 @@
 # DoodleBob 🖊️
 
-A Desktop Goose-inspired desktop pet featuring **DoodleBob** from SpongeBob SquarePants.
-DoodleBob walks around your screen, randomly closes windows, and steals your cursor with his magic pencil eraser.
+A Python (tkinter) desktop pet that runs as a transparent always-on-top overlay on Windows. On Linux/macOS it runs in `--windowed` mode for development/testing.
 
-![DoodleBob Concept](https://upload.wikimedia.org/wikipedia/en/f/f7/DoodleBob.png)
+DoodleBob walks around your screen, randomly closes windows, and steals your cursor with his magic pencil eraser.
 
 ## Features
 
-1. **Random Window Closing** — DoodleBob walks to a random window's X button and closes it. Happens at random intervals (30–90 seconds apart, never predictable).
+1. **Random Window Closing** — DoodleBob walks to a random window's X button and closes it. Happens at random intervals.
 
 2. **Cursor Stealing** — DoodleBob periodically chases your cursor, "erases" it with the magic pencil's eraser end, hides it briefly, then "redraws" it at a random screen position. While the cursor is hidden, it truly disappears.
 
-3. **Autonomous Walking** — DoodleBob wanders around the screen, bouncing off edges, occasionally pausing to idle.
+3. **Autonomous Walking & Lurking** — DoodleBob wanders around the screen or "lurks" near your cursor before attacking.
+
+4. **Screen Doodling** — DoodleBob can draw random shapes/doodles on your screen.
 
 ## Requirements
 
 - **Python 3.10+**
 - **Windows 10/11** (for full functionality — overlay, window closing, cursor hiding)
-- Linux/macOS supported in windowed/testing mode
+- `pip install -r requirements.txt` (Pillow, pystray; pywin32 auto-included on Windows only)
+- `python3-tk` system package is required
+
+## Keyboard Controls (in-app)
+
+- `C` — Force cursor steal (with lurking)
+- `W` — Force window close (walk to random window X button)
+- `D` — Force screen doodle
+- `S` — Stop current action (return to wandering)
+- `B` — Toggle behaviors on/off (off = only wander)
+- `Space` — Pause / Resume
+- `Escape` or `Q` — Close app (quit)
 
 ## Quick Start
 
-```bash
+```powershell
 # Install dependencies
 pip install -r requirements.txt
 
@@ -33,27 +45,17 @@ python main.py
 
 # Run in windowed mode (for testing / development)
 python main.py --windowed
-```
 
-## Building a Standalone .exe (Windows)
+# Generate a sprite sheet PNG from current sprites
+python main.py --sheet
 
-```bash
-pip install pyinstaller
-build.bat
-# Find DoodleBob.exe in dist/
+# Split an improved sprite sheet back into individual PNGs
+python main.py --split-sheet path/to/sheet.png
 ```
 
 ## Custom Sprites
 
-Placeholder sprites are auto-generated on first run in `assets/sprites/`.
-Replace them with your own pixel art (Aseprite, Piskel, etc.):
-
-### Supported formats
-
-| Format | Example |
-|--------|---------|
-| Animated GIF | `walk.gif` — each GIF frame = one animation frame |
-| Numbered PNGs | `walk_0.png`, `walk_1.png`, `walk_2.png`, ... |
+The sprite loading order is: **animated GIF → numbered PNGs → sprite sheet fallback → auto-generated placeholder**.
 
 ### Sprite sets
 
@@ -65,41 +67,22 @@ Replace them with your own pixel art (Aseprite, Piskel, etc.):
 | `approach` | Walking toward window X button | 4 |
 | `erase` | Erasing cursor with pencil eraser | 4 |
 | `draw` | Redrawing cursor with pencil tip | 4 |
-| `cursor.png` | Fake cursor sprite | 1 |
+| `lurk` | Lurking near cursor | 2 |
+| `doodle` | Drawing random shapes | 4 |
+| `pencil_press` | Pencil contact animation | 4 |
 
-Base sprite size: **64×80 pixels** (scaled 2× for display = 128×160).
-Use `NEAREST` neighbor scaling for crisp pixel art.
+Base sprite size: **64×80 pixels**.
 
 ## Configuration
 
 Edit `config.py` to tweak behavior timing, movement speed, animation FPS, etc.
 
-Key settings:
-- `WINDOW_CLOSE_MIN_DELAY_S` / `MAX` — Window close interval range (seconds)
-- `CURSOR_STEAL_MIN_DELAY_S` / `MAX` — Cursor steal interval range (seconds)
-- `WANDER_SPEED` — How fast DoodleBob walks
-- `CURSOR_CHASE_SPEED` — How fast DoodleBob chases the cursor
-- `SPRITE_SCALE` — Display scale multiplier
+## Key Caveats
 
-## Architecture
-
-```
-main.py           Entry point (CLI argument parsing)
-app.py            Application class (tkinter overlay, main loop, tray icon)
-character.py      DoodleBob state machine, movement, animation, rendering
-behaviors.py      WindowCloseBehavior, CursorStealBehavior
-win_api.py        Windows API wrappers (cursor, window management) + Linux stubs
-sprite_gen.py     Placeholder sprite generator (PIL-based)
-config.py         All tunable constants
-build.bat         PyInstaller build script (Windows)
-assets/sprites/   Sprite files (auto-generated or user-provided)
-```
-
-## System Tray
-
-When `pystray` is available, DoodleBob adds a system tray icon with:
-- **Pause / Resume** — Temporarily freeze DoodleBob
-- **Quit** — Exit gracefully
+- The transparent overlay (`-transparentcolor`) only works on Windows. On Linux, use `--windowed`.
+- System tray icon requires GTK on Linux.
+- Window closing and cursor hiding are no-ops on non-Windows platforms.
+- Pencil particle effects are only visible in windowed mode.
 
 ## License
 

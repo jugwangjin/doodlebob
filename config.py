@@ -6,14 +6,14 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SPRITES_DIR = os.path.join(BASE_DIR, "assets", "sprites")
 
 # Display
-SPRITE_SCALE = 2
+SPRITE_SCALE = 1
 TRANSPARENT_COLOR = "#010101"
 UPDATE_MS = 33  # ~30 FPS
 
 # Character sprite base size (before scaling)
-# Width is 120 to fit the giant magic pencil held above DoodleBob's head
+# Width and height are 120 to fit the giant magic pencil held above DoodleBob's head
 CHAR_BASE_W = 120
-CHAR_BASE_H = 80
+CHAR_BASE_H = 120
 
 # Wandering (1.5x speed)
 WANDER_SPEED_FRACTION = 0.105  # 0.07 * 1.5
@@ -58,15 +58,14 @@ ANIM_FPS = 8
 
 # Sprite sheet
 SPRITE_SHEET_BG = (192, 192, 192, 255)
-SPRITE_SHEET_COLS = 4
+SPRITE_SHEET_COLS = 28
 SPRITE_SHEET_LAYOUT = [
-    ("walk", 4),
-    ("chase", 4),
-    ("erase", 4),
-    ("approach", 4),
     ("idle", 2),
-    ("draw", 4),
+    ("walk", 4),
+    ("approach", 4),
     ("pencil_press", 4),
     ("lurk", 2),
-    ("doodle", 4),
+    ("chase", 4),
+    ("erase", 4),
+    ("draw", 4),
 ]
